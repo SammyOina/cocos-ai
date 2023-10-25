@@ -14,11 +14,12 @@ import (
 const svcName = "agent.AgentService"
 
 type grpcClient struct {
-	run     endpoint.Endpoint
-	algo    endpoint.Endpoint
-	data    endpoint.Endpoint
-	result  endpoint.Endpoint
-	timeout time.Duration
+	run         endpoint.Endpoint
+	algo        endpoint.Endpoint
+	data        endpoint.Endpoint
+	result      endpoint.Endpoint
+	attestation endpoint.Endpoint
+	timeout     time.Duration
 }
 
 // NewClient returns new gRPC client instance.
@@ -211,4 +212,18 @@ func (c grpcClient) Result(ctx context.Context, request *agent.ResultRequest, _ 
 
 	resultRes := res.(resultRes)
 	return &agent.ResultResponse{File: resultRes.File}, nil
+}
+
+func (c grpcClient) Attestation(ctx context.Context, request *agent.AttestationRequest, _ ...grpc.CallOption) (*agent.AttestationResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	res, err := c.attestation(ctx, &request)
+	if err != nil {
+		return nil, err
+	}
+
+	resultRes := res.(attestationRes)
+	return &agent.AttestationResponse{File: resultRes.File}, nil
+
 }
