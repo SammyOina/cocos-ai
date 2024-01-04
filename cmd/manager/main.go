@@ -46,6 +46,7 @@ type config struct {
 	JaegerURL  string `env:"COCOS_JAEGER_URL"         envDefault:"http://localhost:14268/api/traces"`
 	InstanceID string `env:"MANAGER_INSTANCE_ID"      envDefault:""`
 	BrokerURL  string `env:"COCOS_MESSAGE_BROKER_URL" envDefault:"nats://localhost:4222"`
+	HostIP     string `env:"MANAGER_HOST_IP"          envDefault:"localhost"`
 }
 
 func main() {
@@ -98,7 +99,7 @@ func main() {
 		logger.Fatal(err.Error())
 	}
 
-	svc := newService(logger, tracer, qemuCfg)
+	svc := newService(logger, tracer, qemuCfg, cfg.HostIP)
 
 	httpServerConfig := server.Config{Port: defSvcHTTPPort}
 	if err := env.Parse(&httpServerConfig, env.Options{Prefix: envPrefixHTTP}); err != nil {
@@ -139,8 +140,8 @@ func main() {
 	}
 }
 
-func newService(logger mglog.Logger, tracer trace.Tracer, qemuCfg qemu.Config) manager.Service {
-	svc := manager.New(qemuCfg)
+func newService(logger mglog.Logger, tracer trace.Tracer, qemuCfg qemu.Config, hostIP string) manager.Service {
+	svc := manager.New(qemuCfg, hostIP)
 
 	svc = api.LoggingMiddleware(svc, logger)
 	counter, latency := internal.MakeMetrics(svcName, "api")

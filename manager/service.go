@@ -35,14 +35,16 @@ type Service interface {
 
 type managerService struct {
 	qemuCfg qemu.Config
+	hostIP  string
 }
 
 var _ Service = (*managerService)(nil)
 
 // New instantiates the manager service implementation.
-func New(qemuCfg qemu.Config) Service {
+func New(qemuCfg qemu.Config, hostIP string) Service {
 	return &managerService{
 		qemuCfg: qemuCfg,
+		hostIP:  hostIP,
 	}
 }
 
@@ -60,7 +62,7 @@ func (ms *managerService) Run(ctx context.Context, computation []byte, agentConf
 
 	var res *agent.RunResponse
 
-	agentConfig.URL = fmt.Sprintf("localhost:%d", ms.qemuCfg.HostFwd3)
+	agentConfig.URL = fmt.Sprintf("%s:%d", ms.hostIP, ms.qemuCfg.HostFwd3)
 
 	err = backoff.Retry(func() error {
 		agentGRPCClient, agentClient, err := agentgrpc.NewAgentClient(agentConfig)
