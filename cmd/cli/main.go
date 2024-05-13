@@ -89,6 +89,7 @@ func main() {
 	rootCmd.AddCommand(cliSVC.NewResultsCmd())
 	attestaionCmd := cliSVC.NewAttestationCmd()
 	rootCmd.AddCommand(attestaionCmd)
+	rootCmd.AddCommand(cliSVC.NewKeysCmd())
 
 	// Attestation commands
 	attestaionCmd.AddCommand(cliSVC.NewGetAttestationCmd())
