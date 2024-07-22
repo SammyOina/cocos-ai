@@ -59,13 +59,14 @@ type Service interface {
 }
 
 type agentService struct {
-	computation Computation    // Holds the current computation request details.
-	algorithm   string         // Filepath to the algorithm received for the computation.
-	datasets    []string       // Filepath to the datasets received for the computation.
-	result      []byte         // Stores the result of the computation.
-	sm          *StateMachine  // Manages the state transitions of the agent service.
-	runError    error          // Stores any error encountered during the computation run.
-	eventSvc    events.Service // Service for publishing events related to computation.
+	computation      Computation    // Holds the current computation request details.
+	algorithm        string         // Filepath to the algorithm received for the computation.
+	datasets         []string       // Filepath to the datasets received for the computation.
+	result           []byte         // Stores the result of the computation.
+	sm               *StateMachine  // Manages the state transitions of the agent service.
+	runError         error          // Stores any error encountered during the computation run.
+	eventSvc         events.Service // Service for publishing events related to computation.
+	requirementsFile string         // Filepath to the requirements file for the algorithm.
 }
 
 var _ Service = (*agentService)(nil)
@@ -124,6 +125,21 @@ func (as *agentService) Algo(ctx context.Context, algorithm Algorithm) error {
 	}
 
 	as.algorithm = f.Name()
+
+	rf, err := os.CreateTemp("", "requirements")
+	if err != nil {
+		return fmt.Errorf("error creating requirements file: %v", err)
+	}
+
+	if _, err := rf.Write(algorithm.Requirements); err != nil {
+		return fmt.Errorf("error writing requirements to file: %v", err)
+	}
+
+	if err := rf.Close(); err != nil {
+		return fmt.Errorf("error closing file: %v", err)
+	}
+
+	as.requirementsFile = rf.Name()
 
 	if as.algorithm != "" {
 		as.sm.SendEvent(algorithmReceived)
@@ -211,7 +227,7 @@ func (as *agentService) runComputation() {
 	as.sm.logger.Debug("computation run started")
 	defer as.sm.SendEvent(runComplete)
 	as.publishEvent("in-progress", json.RawMessage{})()
-	algorithm := binary.New(as.sm.logger, as.eventSvc, as.algorithm, as.datasets...)
+	algorithm := binary.New(as.sm.logger, as.eventSvc, as.algorithm, as.requirementsFile, as.datasets...)
 	result, err := algorithm.Run()
 	if err != nil {
 		as.runError = err

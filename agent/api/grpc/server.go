@@ -13,6 +13,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const bufferSize = 1024 * 1024
+
 var _ agent.AgentServiceServer = (*grpcServer)(nil)
 
 type grpcServer struct {
