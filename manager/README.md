@@ -12,10 +12,12 @@ The service is configured using the environment variables from the following tab
 | COCOS_JAEGER_TRACE_RATIO                  | The ratio of traces to sample.                                                                                   | 1.0                          |
 | MANAGER_INSTANCE_ID                       | The instance ID for the manager service.                                                                         |                              |
 | MANAGER_ATTESTATION_POLICY_BINARY         | The file path for the attestation policy binary.                                                                 | ../../build                  |
-| MANAGER_GRPC_CLIENT_CERT                  | The file path for the client certificate.                                                                        |                              |
-| MANAGER_GRPC_CLIENT_KEY                   | The file path for the client private key.                                                                        |                              |
+| MANAGER_GRPC_SERVER_CERT                  | The file path for the client certificate.                                                                        |                              |
+| MANAGER_GRPC_SERVER_KEY                   | The file path for the client private key.                                                                        |                              |
 | MANAGER_GRPC_SERVER_CA_CERTS              | The file path for the server CA certificate(s).                                                                  |                              |
-| MANAGER_GRPC_URL                          | The URL for the gRPC endpoint.                                                                                   | localhost:7001               |
+| MANAGER_GRPC_CLIENT_CA_CERTS              | The file path for the client CA certificate(s).                                                                  |                              |
+| MANAGER_GRPC_PORT                         | The URL for the gRPC endpoint.                                                                                   | 7001                         |
+| MANAGER_GRPC_HOST                         | The host for the gRPC endpoint.                                                                                  |                              |
 | MANAGER_GRPC_TIMEOUT                      | The timeout for gRPC requests.                                                                                   | 60s                          |
 | MANAGER_EOS_VERSION                       | The EOS version used for booting SVMs.                                                                           |                              |
 | MANAGER_INSTANCE_ID                       | Manager service instance ID                                                                                      |                              |
@@ -111,70 +113,9 @@ Once the image is built copy the kernel and rootfs image to `cmd/manager/img` fr
 
 Another option is to use release versions of EOS that can be downloaded from the [Cocos GitHub repository](https://github.com/ultravioletrs/cocos/releases).
 
-#### Test VM creation
-
-```sh
-cd cmd/manager
-
-sudo find / -name OVMF_CODE.fd
-# => /usr/share/OVMF/OVMF_CODE.fd
-OVMF_CODE=/usr/share/OVMF/OVMF_CODE.fd
-
-sudo find / -name OVMF_VARS.fd
-# => /usr/share/OVMF/OVMF_VARS.fd
-OVMF_VARS=/usr/share/OVMF/OVMF_VARS.fd
-
-KERNEL="img/bzImage"
-INITRD="img/rootfs.cpio.gz"
-
-qemu-system-x86_64 \
-    -enable-kvm \
-    -cpu EPYC-v4 \
-    -machine q35 \
-    -smp 4 \
-    -m 2048M,slots=5,maxmem=10240M \
-    -no-reboot \
-    -drive if=pflash,format=raw,unit=0,file=$OVMF_CODE,readonly=on \
-    -netdev user,id=vmnic,hostfwd=tcp::7020-:7002 \
-    -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile= \
-    -device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=3 -vnc :0 \
-    -kernel $KERNEL \
-    -append "earlyprintk=serial console=ttyS0" \
-    -initrd $INITRD \
-    -nographic \
-    -monitor pty \
-    -monitor unix:monitor,server,nowait
-```
-Once the VM is booted press enter and on the login use username `root`.
-
-#### Build and run Agent
-
-Agent is started automatically in the VM.
-```sh
-# List running processes and use 'grep' to filter for processes containing 'agent' in their names.
-ps aux | grep cocos-agent
-# This command helps verify that the 'agent' process is running.
-# The output shows the process ID (PID), resource usage, and other information about the 'cocos-agent' process.
-# For example: 118 root     cocos-agent
-```
-
-We can also check if `Agent` is reachable from the host machine:
-
-```sh
-# Use netcat (nc) to test the connection to localhost on port 7020.
-nc -zv localhost 7020
-# Output:
-# nc: connect to localhost (::1) port 7020 (tcp) failed: Connection refused
-# Connection to localhost (127.0.0.1) 7020 port [tcp/*] succeeded!
-```
-
-#### Conclusion
-
-Now you are able to use `Manager` with `Agent`. Namely, `Manager` will create a VM with a separate OVMF variables file on manager `/run` request.
-
 ### OVMF
 
-We need [Open Virtual Machine Firmware](https://wiki.ubuntu.com/UEFI/OVMF). OVMF is a port of Intel's tianocore firmware - an open source implementation of the Unified Extensible Firmware Interface (UEFI) - used by a qemu virtual machine. We need OVMF in order to run virtual machine with *focal-server-cloudimg-amd64*. When we install QEMU, we get two files that we need to start a VM: `OVMF_VARS.fd` and `OVMF_CODE.fd`. We will make a local copy of `OVMF_VARS.fd` since a VM will modify this file. On the other hand, `OVMF_CODE.fd` is only used as a reference, so we only record its path in an environment variable.
+We need [Open Virtual Machine Firmware](https://wiki.ubuntu.com/UEFI/OVMF). OVMF is a port of Intel's tianocore firmware - an open source implementation of the Unified Extensible Firmware Interface (UEFI) - used by a qemu virtual machine. We need OVMF in order to run virtual machine. When we install QEMU, we get two files that we need to start a VM: `OVMF_VARS.fd` and `OVMF_CODE.fd`. We will make a local copy of `OVMF_VARS.fd` since a VM will modify this file. On the other hand, `OVMF_CODE.fd` is only used as a reference, so we only record its path in an environment variable.
 
 ```sh
 sudo find / -name OVMF_CODE.fd
@@ -191,8 +132,6 @@ NB: we set environment variables that we will use in the shell process where we 
 
 ## Deployment
 
-To start the service, execute the following shell script (note a server needs to be running see  [here](../test/cvms/README.md)):
-
 ```bash
 # Download the latest version of the service
 git clone git@github.com:ultravioletrs/cocos.git
@@ -203,7 +142,7 @@ cd cocos
 make manager
 
 # Set the environment variables and run the service
-MANAGER_GRPC_URL=localhost:7001
+MANAGER_GRPC_PORT=7001
 MANAGER_LOG_LEVEL=debug \
 MANAGER_QEMU_USE_SUDO=false \
 MANAGER_QEMU_ENABLE_SEV=false \
@@ -213,7 +152,7 @@ MANAGER_QEMU_ENABLE_SEV=false \
 To enable [AMD SEV](https://www.amd.com/en/developer/sev.html) support, start manager like this 
 
 ```sh
-MANAGER_GRPC_URL=localhost:7001
+MANAGER_GRPC_PORT=7001
 MANAGER_LOG_LEVEL=debug \
 MANAGER_QEMU_USE_SUDO=true \
 MANAGER_QEMU_ENABLE_SEV=true \
@@ -226,7 +165,7 @@ To build the OVMF with the kernel hash capability, we must build the AmdSev pack
 To enable [AMD SEV-SNP](https://www.amd.com/en/developer/sev.html) support, start manager like this 
 
 ```sh
-MANAGER_GRPC_URL=localhost:7001 \
+MANAGER_GRPC_PORT=7001 \
 MANAGER_LOG_LEVEL=debug \
 MANAGER_QEMU_ENABLE_SEV=false \
 MANAGER_QEMU_ENABLE_SEV_SNP=true \
@@ -239,7 +178,7 @@ MANAGER_QEMU_QEMU_OVMF_CODE_FILE=<path to OVMF.fd Amd Sev built package> \
 To include the kernel hash into the measurement of the attestation report (SEV or SEV-SNP), start manager like this
 
 ```sh
-MANAGER_GRPC_URL=localhost:7001 \
+MANAGER_GRPC_PORT=7001 \
 MANAGER_LOG_LEVEL=debug \
 MANAGER_QEMU_ENABLE_SEV=false \
 MANAGER_QEMU_ENABLE_SEV_SNP=true \
@@ -249,6 +188,17 @@ MANAGER_QEMU_BIN_PATH=<path to QEMU binary> \
 MANAGER_QEMU_QEMU_OVMF_CODE_FILE=<path to OVMF.fd Amd Sev built package> \
 ./build/cocos-manager
 ```
+
+### Launch a CVM
+
+First we need to launch a cvms server that agent will connect to and be able to receive run requests.
+
+```sh
+export MANAGER_GRPC_URL=localhost:7001
+
+make cli
+
+
 
 ### Verifying VM launch
 
