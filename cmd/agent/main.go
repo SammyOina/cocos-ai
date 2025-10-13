@@ -29,6 +29,7 @@ import (
 	"github.com/ultravioletrs/cocos/pkg/atls"
 	"github.com/ultravioletrs/cocos/pkg/attestation"
 	"github.com/ultravioletrs/cocos/pkg/attestation/azure"
+	"github.com/ultravioletrs/cocos/pkg/attestation/quoteprovider"
 	"github.com/ultravioletrs/cocos/pkg/attestation/tdx"
 	"github.com/ultravioletrs/cocos/pkg/attestation/vtpm"
 	"github.com/ultravioletrs/cocos/pkg/clients"
@@ -153,6 +154,15 @@ func main() {
 		logger.Error("vmpl level must be in a range [0, 3]")
 		exitCode = 1
 		return
+	}
+
+	if ccPlatform == attestation.SNP || ccPlatform == attestation.SNPvTPM {
+		err = quoteprovider.FetchCertificates(uint(cfg.Vmpl))
+		if err != nil {
+			logger.Error(fmt.Sprintf("failed to fetch certificates: %s", err))
+			exitCode = 1
+			return
+		}
 	}
 
 	svc := newService(ctx, logger, eventSvc, provider, cfg.Vmpl)
