@@ -248,24 +248,32 @@ func (as *agentService) InitComputation(ctx context.Context, cmp Computation) er
 	// Debug: Log manifest details
 	as.logger.Info("received computation manifest",
 		"computation_id", cmp.ID,
-		"kbs_enabled", cmp.KBS.Enabled,
-		"kbs_url", cmp.KBS.URL,
 		"algo_has_source", cmp.Algorithm.Source != nil,
+		"algo_kbs_enabled", cmp.Algorithm.KBS != nil && cmp.Algorithm.KBS.Enabled,
+		"algo_kbs_url", func() string {
+			if cmp.Algorithm.KBS != nil {
+				return cmp.Algorithm.KBS.URL
+			}
+			return ""
+		}(),
 		"dataset_count", len(cmp.Datasets))
 
 	if cmp.Algorithm.Source != nil {
 		as.logger.Info("algorithm remote source configured",
 			"url", cmp.Algorithm.Source.URL,
-			"kbs_resource_path", cmp.Algorithm.Source.KBSResourcePath)
+			"kbs_resource_path", cmp.Algorithm.Source.KBSResourcePath,
+			"kbs_enabled", cmp.Algorithm.KBS != nil && cmp.Algorithm.KBS.Enabled,
+			"kbs_url", func() string {
+				if cmp.Algorithm.KBS != nil {
+					return cmp.Algorithm.KBS.URL
+				}
+				return ""
+			}())
 	} else {
 		as.logger.Info("algorithm remote source NOT configured - will wait for direct upload")
 	}
 
-	if cmp.KBS.Enabled {
-		as.logger.Info("KBS is ENABLED", "url", cmp.KBS.URL)
-	} else {
-		as.logger.Info("KBS is NOT ENABLED")
-	}
+	as.logger.Info("Global KBS is NOT USED (per-resource configuration only)")
 
 	for i, d := range cmp.Datasets {
 		if d.Source != nil {
@@ -273,7 +281,14 @@ func (as *agentService) InitComputation(ctx context.Context, cmp Computation) er
 				"index", i,
 				"filename", d.Filename,
 				"url", d.Source.URL,
-				"kbs_resource_path", d.Source.KBSResourcePath)
+				"kbs_resource_path", d.Source.KBSResourcePath,
+				"kbs_enabled", d.KBS != nil && d.KBS.Enabled,
+				"kbs_url", func() string {
+					if d.KBS != nil {
+						return d.KBS.URL
+					}
+					return ""
+				}())
 		}
 	}
 
@@ -354,21 +369,29 @@ func (as *agentService) downloadAlgorithmIfRemote(state statemachine.State) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	// Debug: Log decision point
+	// Check if algorithm should be downloaded from remote source
+	// Check if algorithm should be downloaded from remote source
+	kbsEnabled := as.computation.Algorithm.KBS != nil && as.computation.Algorithm.KBS.Enabled
+	kbsURL := ""
+	if as.computation.Algorithm.KBS != nil {
+		kbsURL = as.computation.Algorithm.KBS.URL
+	}
+
 	as.logger.Info("checking if algorithm should be downloaded automatically",
 		"algo_has_source", as.computation.Algorithm.Source != nil,
-		"kbs_enabled", as.computation.KBS.Enabled)
+		"kbs_enabled", kbsEnabled)
 
 	// Check if algorithm should be downloaded from remote source
-	if as.computation.Algorithm.Source != nil && as.computation.KBS.Enabled {
+	if as.computation.Algorithm.Source != nil && kbsEnabled {
 		as.logger.Info("downloading algorithm from remote source",
 			"url", as.computation.Algorithm.Source.URL,
-			"kbs_resource_path", as.computation.Algorithm.Source.KBSResourcePath)
+			"kbs_resource_path", as.computation.Algorithm.Source.KBSResourcePath,
+			"kbs_url", kbsURL)
 
 		// Use background context for download operation
 		ctx := context.Background()
 
-		res, err := as.downloadAndDecryptResource(ctx, as.computation.Algorithm.Source, "algorithm")
+		res, err := as.downloadAndDecryptResource(ctx, as.computation.Algorithm.Source, kbsURL, "algorithm")
 		if err != nil {
 			as.runError = fmt.Errorf("failed to download and decrypt algorithm: %w", err)
 			as.logger.Error(as.runError.Error())
@@ -478,7 +501,8 @@ func (as *agentService) downloadDatasetsIfRemote(state statemachine.State) {
 	// Check if any datasets should be downloaded from remote sources
 	hasRemoteDatasets := false
 	for _, d := range as.computation.Datasets {
-		if d.Source != nil && as.computation.KBS.Enabled {
+		kbsEnabled := d.KBS != nil && d.KBS.Enabled
+		if d.Source != nil && kbsEnabled {
 			hasRemoteDatasets = true
 			break
 		}
@@ -493,10 +517,16 @@ func (as *agentService) downloadDatasetsIfRemote(state statemachine.State) {
 	ctx := context.Background()
 	for i := len(as.computation.Datasets) - 1; i >= 0; i-- {
 		d := as.computation.Datasets[i]
-		if d.Source != nil && as.computation.KBS.Enabled {
-			as.logger.Info("downloading dataset from remote source", "filename", d.Filename)
+		kbsEnabled := d.KBS != nil && d.KBS.Enabled
+		kbsURL := ""
+		if d.KBS != nil {
+			kbsURL = d.KBS.URL
+		}
 
-			res, err := as.downloadAndDecryptResource(ctx, d.Source, "dataset")
+		if d.Source != nil && kbsEnabled {
+			as.logger.Info("downloading dataset from remote source", "filename", d.Filename, "kbs_url", kbsURL)
+
+			res, err := as.downloadAndDecryptResource(ctx, d.Source, kbsURL, "dataset")
 			if err != nil {
 				as.runError = fmt.Errorf("failed to download and decrypt dataset %s: %w", d.Filename, err)
 				as.logger.Error(as.runError.Error())
@@ -567,8 +597,8 @@ type DecryptedResource struct {
 // downloadAndDecryptResource downloads and decrypts a resource from various sources.
 // For OCI images, Skopeo handles download and CoCo Keyprovider handles decryption automatically.
 // For S3, GCS, HTTP/HTTPS: download + optional AES-256-GCM decryption with key from KBS.
-func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *ResourceSource, resourceType string) (*DecryptedResource, error) {
-	// Determine source type.
+func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *ResourceSource, kbsURL, resourceType string) (*DecryptedResource, error) {
+	// Determine source type
 	sourceType := source.Type
 	if sourceType == "" {
 		sourceType = inferSourceType(source.URL)
@@ -579,7 +609,7 @@ func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *
 
 	switch sourceType {
 	case resource.SourceTypeOCIImage:
-		return as.downloadAndDecryptOCIImage(ctx, source, resourceType)
+		return as.downloadAndDecryptOCIImage(ctx, source, kbsURL, resourceType)
 	case resource.SourceTypeS3, resource.SourceTypeGCS, resource.SourceTypeHTTPS, resource.SourceTypeHTTP:
 		return as.downloadAndDecryptGenericResource(ctx, source, sourceType, resourceType)
 	default:
@@ -738,9 +768,9 @@ func kbsHTTPGet(ctx context.Context, url string) ([]byte, error) {
 }
 
 // downloadAndDecryptOCIImage downloads and decrypts an OCI image using Skopeo and CoCo Keyprovider.
-func (as *agentService) downloadAndDecryptOCIImage(ctx context.Context, source *ResourceSource, resourceType string) (*DecryptedResource, error) {
-	as.logger.Info(fmt.Sprintf("downloading OCI image (url=%s encrypted=%t kbs_path=%s)",
-		source.URL, source.Encrypted, source.KBSResourcePath))
+func (as *agentService) downloadAndDecryptOCIImage(ctx context.Context, source *ResourceSource, kbsURL, resourceType string) (*DecryptedResource, error) {
+	as.logger.Info(fmt.Sprintf("downloading OCI image (url=%s encrypted=%t kbs_path=%s kbs_url=%s)",
+		source.URL, source.Encrypted, source.KBSResourcePath, kbsURL))
 
 	// Create Skopeo client
 	if as.ociClient == nil {
@@ -759,6 +789,7 @@ func (as *agentService) downloadAndDecryptOCIImage(ctx context.Context, source *
 		URI:             uri,
 		Encrypted:       source.Encrypted,
 		KBSResourcePath: source.KBSResourcePath,
+		KBSURL:          kbsURL,
 	}
 
 	// Pull and decrypt image
@@ -869,10 +900,16 @@ func (as *agentService) Algo(ctx context.Context, algo Algorithm) error {
 	var algoData []byte
 
 	// Check if algorithm should be downloaded from remote source
-	if as.computation.Algorithm.Source != nil && as.computation.KBS.Enabled {
-		as.logger.Info("downloading algorithm from remote source")
+	kbsEnabled := as.computation.Algorithm.KBS != nil && as.computation.Algorithm.KBS.Enabled
+	kbsURL := ""
+	if as.computation.Algorithm.KBS != nil {
+		kbsURL = as.computation.Algorithm.KBS.URL
+	}
 
-		res, err := as.downloadAndDecryptResource(ctx, as.computation.Algorithm.Source, "algorithm")
+	if as.computation.Algorithm.Source != nil && kbsEnabled {
+		as.logger.Info("downloading algorithm from remote source", "kbs_url", kbsURL)
+
+		res, err := as.downloadAndDecryptResource(ctx, as.computation.Algorithm.Source, kbsURL, "algorithm")
 		if err != nil {
 			return fmt.Errorf("failed to download and decrypt algorithm: %w", err)
 		}
@@ -951,10 +988,16 @@ func (as *agentService) Data(ctx context.Context, dataset Dataset) error {
 	// Check if any dataset should be downloaded from remote source
 	matchedIndex := -1
 	for i, d := range as.computation.Datasets {
-		if d.Source != nil && as.computation.KBS.Enabled {
-			as.logger.Info("downloading dataset from remote source", "filename", d.Filename)
+		kbsEnabled := d.KBS != nil && d.KBS.Enabled
+		kbsURL := ""
+		if d.KBS != nil {
+			kbsURL = d.KBS.URL
+		}
 
-			downloadedData, err := as.downloadAndDecryptResource(ctx, d.Source, "dataset")
+		if d.Source != nil && kbsEnabled {
+			as.logger.Info("downloading dataset from remote source", "filename", d.Filename, "kbs_url", kbsURL)
+
+			downloadedData, err := as.downloadAndDecryptResource(ctx, d.Source, kbsURL, "dataset")
 			if err != nil {
 				return fmt.Errorf("failed to download and decrypt dataset: %w", err)
 			}

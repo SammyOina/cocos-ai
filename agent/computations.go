@@ -54,7 +54,6 @@ type Computation struct {
 	Datasets        Datasets         `json:"datasets,omitempty"`
 	Algorithm       Algorithm        `json:"algorithm,omitempty"`
 	ResultConsumers []ResultConsumer `json:"result_consumers,omitempty"`
-	KBS             KBSConfig        `json:"kbs,omitempty"`
 }
 
 type ResultConsumer struct {
@@ -76,6 +75,7 @@ type Dataset struct {
 	Filename   string          `json:"filename,omitempty"`
 	Source     *ResourceSource `json:"source,omitempty"` // Optional remote source
 	Decompress bool            `json:"decompress,omitempty"`
+	KBS        *KBSConfig      `json:"kbs,omitempty"`
 }
 
 type Datasets []Dataset
@@ -88,6 +88,7 @@ type Algorithm struct {
 	Source       *ResourceSource `json:"source,omitempty"` // Optional remote source
 	AlgoType     string          `json:"algo_type,omitempty"`
 	AlgoArgs     []string        `json:"algo_args,omitempty"`
+	KBS          *KBSConfig      `json:"kbs,omitempty"`
 }
 
 type ManifestIndexKey struct{}
