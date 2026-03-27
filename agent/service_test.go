@@ -504,7 +504,7 @@ func testComputation(t *testing.T) Computation {
 		Name:            "sample computation",
 		Description:     "sample description",
 		Datasets:        []Dataset{{Hash: dataHash, UserKey: []byte("key"), Dataset: data, Filename: datasetFile}},
-		Algorithm:       Algorithm{Hash: algoHash, UserKey: []byte("key"), Algorithm: algo},
+		Algorithm:       &Algorithm{Hash: algoHash, UserKey: []byte("key"), Algorithm: algo},
 		ResultConsumers: []ResultConsumer{{UserKey: []byte("key")}},
 	}
 }
@@ -631,7 +631,7 @@ func TestStopComputationIntegration(t *testing.T) {
 	computation := Computation{
 		ID:   "integration-test",
 		Name: "Integration Test",
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			Hash:      algoHash,
 			Algorithm: algo,
 		},
@@ -823,7 +823,7 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{URL: "docker://registry/algo:latest"},
 				KBS:    &KBSConfig{Enabled: false},
 			},
@@ -843,7 +843,7 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://invalid.example.com/algo:latest",
@@ -867,7 +867,7 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{
 					URL: "http://unsupported-format/algo",
 				},
@@ -1145,7 +1145,7 @@ func TestDownloadAlgorithmIfRemote_Success(t *testing.T) {
 	algoHash := sha3.Sum256(algoContent)
 
 	svc.computation = Computation{
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			Hash:     algoHash,
 			AlgoType: "python",
 			Source: &ResourceSource{
@@ -1200,7 +1200,7 @@ func TestDownloadAlgorithmIfRemote_Docker_Success(t *testing.T) {
 	svc.ociClient = mockOCI
 
 	svc.computation = Computation{
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			AlgoType: "docker",
 			Hash:     dummyHash,
 			Source: &ResourceSource{
@@ -1416,7 +1416,7 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     sha3.Sum256([]byte("expected content")),
 				AlgoType: "python",
 				Source: &ResourceSource{
@@ -1452,7 +1452,7 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     sha3.Sum256([]byte(algoContent)),
 				AlgoType: "python",
 				Source: &ResourceSource{
@@ -1485,7 +1485,7 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				AlgoType: "python",
 				Source: &ResourceSource{
 					Type: "oci-image",
@@ -1674,7 +1674,7 @@ func TestAlgo_RemoteSource(t *testing.T) {
 		sm:        sm,
 		ociClient: mockOCI,
 		computation: Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     algoHash,
 				AlgoType: "python",
 				Source: &ResourceSource{
