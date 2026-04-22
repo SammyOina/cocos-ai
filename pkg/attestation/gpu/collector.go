@@ -39,13 +39,17 @@ type commandCollector struct {
 }
 
 type helperRequest struct {
-	NonceHex string `json:"nonce_hex"`
+	Mode         string          `json:"mode,omitempty"`
+	NonceHex     string          `json:"nonce_hex"`
+	EvidenceJSON json.RawMessage `json:"evidence_json,omitempty"`
 }
 
 type helperResponse struct {
-	Vendor         string          `json:"vendor,omitempty"`
-	EvidenceFormat string          `json:"evidence_format,omitempty"`
-	EvidenceJSON   json.RawMessage `json:"evidence_json"`
+	Vendor          string          `json:"vendor,omitempty"`
+	EvidenceFormat  string          `json:"evidence_format,omitempty"`
+	EvidenceJSON    json.RawMessage `json:"evidence_json,omitempty"`
+	ClaimsJSON      json.RawMessage `json:"claims_json,omitempty"`
+	DetachedEATJSON json.RawMessage `json:"detached_eat_json,omitempty"`
 }
 
 // NewCommandCollector creates a collector that shells out to a helper binary.
@@ -72,6 +76,7 @@ func (c *commandCollector) Collect(ctx context.Context, nonce []byte) (*Evidence
 	}
 
 	reqBody, err := json.Marshal(helperRequest{
+		Mode:     "collect",
 		NonceHex: hex.EncodeToString(nonce),
 	})
 	if err != nil {
