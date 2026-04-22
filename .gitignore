@@ -29,3 +29,4 @@ Cargo.lock
 *.enc
 *.key
 *.pub
+.codex
