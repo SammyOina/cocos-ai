@@ -5,24 +5,25 @@ This guide explains how to test Cocos with encrypted remote resources using the 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         CVM (Agent)                          │
-│                                                              │
+┌────────────────────────────────────────────────────────────┐
+│                         CVM (Agent)                        │
+│                                                            │
 │  ┌──────────┐    ┌────────────────┐    ┌─────────────────┐ │
-│  │  Agent   │───▶│    Skopeo      │───▶│ CoCo Keyprovider│ │
-│  └──────────┘    │  (ocicrypt)    │    │   (gRPC:50011)  │ │
-│                  └────────────────┘    └────────┬────────┘ │
-│                                                  │          │
-│                                         ┌────────▼────────┐ │
-│                                         │ Attestation     │ │
-│                                         │ Agent (50002)   │ │
-│                                         └────────┬────────┘ │
-└──────────────────────────────────────────────────┼──────────┘
-                                                   │
-                                          ┌────────▼────────┐
-                                          │   KBS Server    │
-                                          │  (Host:8080)    │
-                                          └─────────────────┘
+│  │  Agent   │──▶│    Skopeo      │──▶│ CoCo Keyprovider│ │
+│  │          │    │  (ocicrypt)    │    │   (gRPC:50011)  │ │
+│  │          │    └───────┬────────┘    └────────┬────────┘ │
+│  │          │            │                      │          │
+│  │          │    ┌───────▼────────┐    ┌────────▼────────┐ │
+│  │          │──▶│  S3/HTTP       │    │ Attestation     │ │
+│  │          │    │  Downloader    │    │ Agent (50002)   │ │
+│  └────┬─────┘    └───────┬────────┘    └────────┬────────┘ │
+│       │                  │                      │          │
+│       └──────────────────┼──────────────────────┘          │
+└────────┬─────────────────┼──────────────────────┬──────────┘
+         │ (Resource)      │ (Resource)           │ (Attest)
+         ▼                 ▼                      ▼
+    OCI Registry       S3 / HTTP / GCS           KBS
+                                             (Key Broker)
 ```
 
 ## Prerequisites
@@ -406,27 +407,43 @@ curl http://HOST_IP:8080/kbs/v0/auth
 # Ensure KBS is configured for sample attestation
 ```
 
-## Differences from Previous Approach
+## 4. Testing with Non-OCI Sources (S3, HTTP, GCS)
 
-| Aspect | Old (Custom) | New (CoCo Standard) |
-|--------|-------------|---------------------|
-| **Download** | Custom S3/HTTP clients | Skopeo (OCI standard) |
-| **Decryption** | Custom KBS client | CoCo Keyprovider |
-| **Attestation** | Direct KBS RCAR | AA → CoCo KP → KBS |
-| **Format** | Raw encrypted files | OCI encrypted images |
-| **Complexity** | ~2000 lines custom code | Standard CoCo components |
+The `cvms` test utility also supports testing remote encrypted resources hosted in more traditional environments like S3-compatible storage or simple web servers, bypassing the need for container registries and OCI images.
 
-## Benefits
+### Supported Flags
 
-1. **Standards Compliance**: Uses OCI and CoCo standards
-2. **Better Tooling**: Leverage Skopeo, Docker, Podman ecosystem
-3. **Simplified Code**: Remove custom registry/decryption logic
-4. **Proven Solution**: Battle-tested CoCo components
-5. **Docker Native**: Works with existing Docker workflows
+The following flags define how resources should be fetched:
 
-## Next Steps
+- `--algo-source-url`: The URL of the algorithm (e.g. `s3://bucket/algo.bin`, `https://server/algo.bin`)
+- `--algo-source-type`: The type of remote endpoint (`s3`, `gcs`, `https`, `http`). If omitted, it will automatically be inferred from the URL scheme.
+- `--algo-kbs-path`: The KBS path to retrieve the AES-256-GCM key from. If present, the agent will attempt decryption.
+- `--dataset-source-urls` and `--dataset-source-type`: Defines the locations and protocols for datasets.
 
-- Encrypt your algorithms and datasets as OCI images
-- Push to your preferred OCI registry (Docker Hub, GHCR, etc.)
-- Update computation manifests to use `oci-image` type
-- Test end-to-end flow with encrypted workloads
+### Encryption Format for Non-OCI Sources
+
+Unlike OCI images where `ocicrypt` wraps the dataset, resources hosted on HTTP/S3 must be straightforwardly encrypted using **AES-256-GCM**.
+
+The expected format is exactly as produced by standard Go AES-GCM:
+`nonce (12 bytes) || ciphertext || tag`
+
+### Test Example
+
+If you had a Python script encrypted using a key hosted at KBS path `default/my-keys/python-script` and uploaded to `s3://my-secure-bucket/script.enc`, you could run:
+
+```bash
+cd test
+go run cvms/main.go --algo-source-url="s3://my-secure-bucket/script.enc" \
+                    --algo-source-type="s3" \
+                    --algo-kbs-path="default/my-keys/python-script" \
+                    --algo-type="python" \
+                    --public-key-path=./test-data/public-key.pem
+```
+
+The system will:
+1. Connect via `attestation-agent` to the KBS to retrieve the symmetric key
+2. Use Google Cloud Storage client library methods (support for generic S3 via environment variables is standard) to fetch the resource
+3. Decrypt using AES-256-GCM
+4. Run the code normally
+
+---

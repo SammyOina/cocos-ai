@@ -22,9 +22,16 @@ type AgentConfig struct {
 
 // ResourceSource specifies the location of a remote encrypted resource.
 type ResourceSource struct {
-	// Type is the type of resource source (currently only "oci-image" is supported)
+	// Type is the type of resource source.
+	// Supported values: "oci-image", "s3", "gcs", "https", "http"
 	Type string `json:"type,omitempty"`
-	// URL is the location of the resource (e.g., docker://registry/repo:tag)
+	// URL is the location of the resource.
+	// Examples:
+	//   - OCI:   "docker://registry/repo:tag"
+	//   - S3:    "s3://bucket/key"
+	//   - GCS:   "gs://bucket/key"
+	//   - HTTPS: "https://host/path/to/file"
+	//   - HTTP:  "http://host/path/to/file"
 	URL string `json:"url,omitempty"`
 	// KBSResourcePath is the path to the decryption key in KBS (e.g., "default/key/my-key")
 	KBSResourcePath string `json:"kbs_resource_path,omitempty"`

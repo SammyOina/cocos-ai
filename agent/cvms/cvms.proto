@@ -116,8 +116,8 @@ message Algorithm {
 }
 
 message Source {
-  string type = 1; // Type of source: "oci-image" (only OCI images supported for CoCo)
-  string url = 2; // URL of the OCI image (e.g., docker://registry/repo:tag)
+  string type = 1; // Type of source: "oci-image", "s3", "gcs", "https", "http"
+  string url = 2; // URL of the resource (e.g., docker://registry/repo:tag, s3://bucket/key, https://host/path)
   string kbs_resource_path = 3; // Path to decryption key in KBS (e.g., "default/key/my-key")
   bool encrypted = 4; // Whether the resource is encrypted (requires KBS)
 }

@@ -759,10 +759,27 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 		assert.NotContains(t, err.Error(), "unsupported source type")
 	})
 
-	t.Run("dataset resource type with oci-image", func(t *testing.T) {
+	t.Run("dataset resource type with oci-image routes to skopeo", func(t *testing.T) {
 		source := &ResourceSource{Type: "oci-image", URL: "docker://invalid.example.com/data:latest"}
 		_, err := svc.downloadAndDecryptResource(ctx, source, "dataset")
 		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "unsupported source type")
+	})
+
+	t.Run("https inferred routes to registry", func(t *testing.T) {
+		// Mock registry to fail predictably
+		source := &ResourceSource{URL: "https://example.com/file.bin"}
+		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		require.Error(t, err)
+		// It should complain about registry missing, because the test service does not initialize the registry
+		assert.Contains(t, err.Error(), "resource registry not initialized")
+	})
+
+	t.Run("s3 inferred routes to registry", func(t *testing.T) {
+		source := &ResourceSource{URL: "s3://bucket/key"}
+		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resource registry not initialized")
 	})
 }
 

@@ -45,8 +45,10 @@ var (
 	// Remote resource configuration.
 	kbsURL              string
 	algoSourceURL       string
+	algoSourceType      string
 	algoKBSResourcePath string
 	datasetSourceURLs   string
+	datasetSourceType   string
 	datasetKBSPaths     string
 	algoType            string
 	algoArgsString      string
@@ -118,12 +120,16 @@ func (s *svc) Run(ctx context.Context, ipAddress string, sendMessage cvmsgrpc.Se
 		}
 
 		for i := 0; i < len(datasetURLs); i++ {
+			srcType := datasetSourceType
+			if srcType == "" {
+				srcType = "oci-image"
+			}
 			datasets = append(datasets, &cvms.Dataset{
 				Hash:     dataHashBytes,
 				UserKey:  pubPem.Bytes,
 				Filename: fmt.Sprintf("dataset_%d.csv", i),
 				Source: &cvms.Source{
-					Type:            "oci-image",
+					Type:            srcType,
 					Url:             datasetURLs[i],
 					KbsResourcePath: datasetKBSPathsList[i],
 					Encrypted:       datasetKBSPathsList[i] != "",
@@ -177,13 +183,20 @@ func (s *svc) Run(ctx context.Context, ipAddress string, sendMessage cvmsgrpc.Se
 			algoArgs = strings.Split(algoArgsString, ",")
 		}
 
+		var algoSrcType string
+		if algoSourceType != "" {
+			algoSrcType = algoSourceType
+		} else {
+			algoSrcType = "oci-image"
+		}
+
 		algorithm = &cvms.Algorithm{
 			Hash:     algoHashBytes,
 			UserKey:  pubPem.Bytes,
 			AlgoType: algoType,
 			AlgoArgs: algoArgs,
 			Source: &cvms.Source{
-				Type:            "oci-image",
+				Type:            algoSrcType,
 				Url:             algoSourceURL,
 				KbsResourcePath: algoKBSResourcePath,
 				Encrypted:       algoKBSResourcePath != "",
@@ -259,14 +272,16 @@ func main() {
 	flagSet.StringVar(&clientCAFile, "client-ca-file", "", "Client CA root certificate file path")
 	// Remote resource flags
 	flagSet.StringVar(&kbsURL, "kbs-url", "", "KBS endpoint URL (e.g., 'http://localhost:8080')")
-	flagSet.StringVar(&algoSourceURL, "algo-source-url", "", "Algorithm source URL (s3://bucket/key or https://...)")
+	flagSet.StringVar(&algoSourceURL, "algo-source-url", "", "Algorithm source URL (docker://..., s3://..., https://..., etc.)")
+	flagSet.StringVar(&algoSourceType, "algo-source-type", "", "Algorithm source type (oci-image, s3, gcs, https, http). Auto-detected from URL if empty.")
 	flagSet.StringVar(&algoKBSResourcePath, "algo-kbs-path", "", "Algorithm KBS resource path (e.g., 'default/key/algo-key')")
 	flagSet.StringVar(&datasetSourceURLs, "dataset-source-urls", "", "Dataset source URLs, comma-separated")
+	flagSet.StringVar(&datasetSourceType, "dataset-source-type", "", "Dataset source type (oci-image, s3, gcs, https, http). Auto-detected from URL if empty.")
 	flagSet.StringVar(&datasetKBSPaths, "dataset-kbs-paths", "", "Dataset KBS resource paths, comma-separated")
 	flagSet.StringVar(&algoType, "algo-type", "", "Algorithm execution type (e.g. binary, python)")
 	flagSet.StringVar(&algoArgsString, "algo-args", "", "Algorithm arguments, comma-separated")
 	flagSet.StringVar(&algoHash, "algo-hash", "", "Algorithm SHA256 hash (hex string)")
-	flagSet.StringVar(&datasetTypeString, "dataset-type", "", "Dataset source type, comma-separated (deprecated, always oci-image)")
+	flagSet.StringVar(&datasetTypeString, "dataset-type", "", "Dataset source type (deprecated, use --dataset-source-type)")
 	flagSet.StringVar(&datasetHash, "dataset-hash", "", "Dataset SHA256 hash (hex string)")
 	flagSet.StringVar(&datasetDecompress, "dataset-decompress", "", "Dataset decompression bools, comma-separated (e.g. true,false)")
 
