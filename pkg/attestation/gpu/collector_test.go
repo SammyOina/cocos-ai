@@ -57,6 +57,10 @@ func TestGPUHelperProcess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
+		if req.Mode != "collect" {
+			fmt.Fprintln(os.Stderr, "unexpected helper mode")
+			os.Exit(1)
+		}
 
 		resp := helperResponse{
 			Vendor:         "nvidia",
