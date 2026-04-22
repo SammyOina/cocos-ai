@@ -6,6 +6,6 @@ license = "Apache-2.0"
 
 [dependencies]
 anyhow = "1"
-nv-attestation-sdk = { git = "https://github.com/NVIDIA/attestation-sdk", branch = "main", subdirectory = "nv-attestation-sdk-rust/nv-attestation-sdk" }
+nv-attestation-sdk = { git = "https://github.com/NVIDIA/attestation-sdk", branch = "main" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
