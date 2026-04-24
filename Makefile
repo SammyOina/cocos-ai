@@ -54,6 +54,8 @@ nvidia-attestation-helper-prereqs:
 ifeq ($(filter 1,$(NVAT_USE_SYSTEM_LIB)),1)
 	@test -f $(NVAT_SYSTEM_HEADER) || \
 		( echo "Missing $(NVAT_SYSTEM_HEADER). Install the NVAT development package or run without NVAT_USE_SYSTEM_LIB=1."; exit 1 )
+	@ldconfig -p | grep -q libnvat.so.1 || \
+		( echo "libnvat.so.1 not found in the dynamic linker cache. Install the NVAT runtime package or run without NVAT_USE_SYSTEM_LIB=1."; exit 1 )
 else
 	@if [ -z "$(NVAT_SDK_CPP_DIR)" ]; then \
 		echo "Unable to locate nv-attestation-sdk-cpp under $$HOME/.cargo/git/checkouts."; \
