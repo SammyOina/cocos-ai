@@ -1,5 +1,7 @@
 BUILD_DIR = build
 SERVICES = manager agent cli attestation-service log-forwarder computation-runner egress-proxy ingress-proxy
+CORE_SYSTEMD_SERVICES = manager attestation-service log-forwarder computation-runner egress-proxy
+CORE_SYSTEMD_UNITS = cocos-manager.service attestation-service.service log-forwarder.service computation-runner.service egress-proxy.service
 NVIDIA_ATTESTATION_HELPER = nvidia-attestation-helper
 NVIDIA_ATTESTATION_HELPER_DIR = tools/$(NVIDIA_ATTESTATION_HELPER)
 NVIDIA_ATTESTATION_HELPER_MANIFEST = $(NVIDIA_ATTESTATION_HELPER_DIR)/Cargo.toml
@@ -20,7 +22,13 @@ TIME ?= $(shell date +%F_%T)
 EMBED_ENABLED ?= 0
 NVAT_USE_SYSTEM_LIB ?=
 INSTALL_DIR ?= /usr/local/bin
+SERVICE_BIN_DIR ?= /usr/bin
 CONFIG_DIR ?= /etc/cocos
+COCOS_ENV_FILE ?= $(CONFIG_DIR)/environment
+INIT_DIR ?= /cocos_init
+COCOS_WORK_DIR ?= /cocos
+COCOS_LOG_DIR ?= /var/log/cocos
+COCOS_RUNTIME_DIR ?= /run/cocos
 SERVICE_NAME ?= cocos-manager
 SERVICE_DIR ?= /etc/systemd/system
 SERVICE_FILE = init/systemd/$(SERVICE_NAME).service
@@ -39,7 +47,7 @@ endef
 NVIDIA_ATTESTATION_HELPER_CARGO_ENV = $(if $(filter 1,$(NVAT_USE_SYSTEM_LIB)),NVAT_USE_SYSTEM_LIB=1,)
 NVIDIA_ATTESTATION_HELPER_RUSTFLAGS = $(strip $(RUSTFLAGS) $(if $(filter 1,$(NVAT_USE_SYSTEM_LIB)),,-C link-arg=-Wl,-rpath,$$ORIGIN/lib))
 
-.PHONY: all $(SERVICES) $(NVIDIA_ATTESTATION_HELPER) nvidia-attestation-helper-prereqs install clean
+.PHONY: all $(SERVICES) $(NVIDIA_ATTESTATION_HELPER) nvidia-attestation-helper-prereqs install install-all-services run-all stop-all clean
 
 all: $(SERVICES) $(NVIDIA_ATTESTATION_HELPER)
 
@@ -94,6 +102,29 @@ install: $(SERVICES)
 	install -d $(CONFIG_DIR)
 	install cocos-manager.env $(CONFIG_DIR)/cocos-manager.env
 
+install-all-services: $(CORE_SYSTEMD_SERVICES)
+	sudo install -d $(SERVICE_BIN_DIR)
+	sudo install -m 755 $(BUILD_DIR)/cocos-manager $(SERVICE_BIN_DIR)/cocos-manager
+	sudo install -m 755 $(BUILD_DIR)/cocos-attestation-service $(SERVICE_BIN_DIR)/attestation-service
+	sudo install -m 755 $(BUILD_DIR)/cocos-log-forwarder $(SERVICE_BIN_DIR)/log-forwarder
+	sudo install -m 755 $(BUILD_DIR)/cocos-computation-runner $(SERVICE_BIN_DIR)/computation-runner
+	sudo install -m 755 $(BUILD_DIR)/cocos-egress-proxy $(SERVICE_BIN_DIR)/egress-proxy
+	sudo install -d $(CONFIG_DIR) $(INIT_DIR) $(COCOS_WORK_DIR) $(COCOS_LOG_DIR) $(COCOS_RUNTIME_DIR)
+	sudo install -m 644 cocos-manager.env $(CONFIG_DIR)/cocos-manager.env
+	sudo touch $(COCOS_ENV_FILE)
+	sudo chmod 644 $(COCOS_ENV_FILE)
+	sudo chmod 755 $(COCOS_RUNTIME_DIR)
+	sudo install -m 755 init/systemd/agent_setup.sh $(INIT_DIR)/agent_setup.sh
+	sudo install -m 755 init/systemd/attestation_setup.sh $(INIT_DIR)/attestation_setup.sh
+	sudo install -m 755 init/systemd/agent_start_script.sh $(INIT_DIR)/agent_start_script.sh
+	sudo install -d $(SERVICE_DIR)
+	sudo install -m 644 init/systemd/cocos-manager.service $(SERVICE_DIR)/cocos-manager.service
+	sudo install -m 644 init/systemd/attestation-service.service $(SERVICE_DIR)/attestation-service.service
+	sudo install -m 644 init/systemd/log-forwarder.service $(SERVICE_DIR)/log-forwarder.service
+	sudo install -m 644 init/systemd/computation-runner.service $(SERVICE_DIR)/computation-runner.service
+	sudo install -m 644 init/systemd/egress-proxy.service $(SERVICE_DIR)/egress-proxy.service
+	sudo systemctl daemon-reload
+
 clean:
 	rm -rf $(BUILD_DIR)
 
@@ -106,6 +137,12 @@ stop:
 install_service:
 	sudo install -m 644 $(SERVICE_FILE) $(SERVICE_DIR)/$(SERVICE_NAME).service
 	sudo systemctl daemon-reload
+
+run-all: install-all-services
+	sudo systemctl start $(CORE_SYSTEMD_UNITS)
+
+stop-all:
+	sudo systemctl stop $(CORE_SYSTEMD_UNITS)
 
 build-igvm:
 	@echo "Running build script for igvmmeasure..."
