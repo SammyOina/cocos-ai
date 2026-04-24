@@ -14,6 +14,7 @@ Environment=ATTESTATION_LOG_LEVEL=debug
 Environment=ATTESTATION_SERVICE_SOCKET=/run/cocos/attestation.sock
 Environment=ATTESTATION_VMPL=2
 Environment=ATTESTATION_EAT_FORMAT=CBOR
+Environment=ATTESTATION_GPU_HELPER_PATH=/usr/libexec/cocos/nvidia-attestation-helper
 # CC Attestation-Agent backend (enabled by default for sample attestation)
 Environment=USE_CC_ATTESTATION_AGENT=true
 Environment=CC_AGENT_ADDRESS=127.0.0.1:50002
