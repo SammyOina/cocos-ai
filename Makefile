@@ -1,7 +1,7 @@
 BUILD_DIR = build
 SERVICES = manager agent cli attestation-service log-forwarder computation-runner egress-proxy ingress-proxy
-CORE_SYSTEMD_SERVICES = attestation-service log-forwarder computation-runner egress-proxy
-CORE_SYSTEMD_UNITS = attestation-service.service log-forwarder.service computation-runner.service egress-proxy.service
+CORE_SYSTEMD_SERVICES = manager attestation-service log-forwarder computation-runner egress-proxy
+CORE_SYSTEMD_UNITS = cocos-manager.service attestation-service.service log-forwarder.service computation-runner.service egress-proxy.service
 NVIDIA_ATTESTATION_HELPER = nvidia-attestation-helper
 NVIDIA_ATTESTATION_HELPER_DIR = tools/$(NVIDIA_ATTESTATION_HELPER)
 NVIDIA_ATTESTATION_HELPER_MANIFEST = $(NVIDIA_ATTESTATION_HELPER_DIR)/Cargo.toml
@@ -25,8 +25,6 @@ INSTALL_DIR ?= /usr/local/bin
 SERVICE_BIN_DIR ?= /usr/bin
 CONFIG_DIR ?= /etc/cocos
 COCOS_ENV_FILE ?= $(CONFIG_DIR)/environment
-COCOS_LIBEXEC_DIR ?= /usr/libexec/cocos
-ATTESTATION_HELPER_INSTALL_PATH ?= $(COCOS_LIBEXEC_DIR)/$(NVIDIA_ATTESTATION_HELPER)
 INIT_DIR ?= /cocos_init
 COCOS_WORK_DIR ?= /cocos
 COCOS_LOG_DIR ?= /var/log/cocos
@@ -104,14 +102,15 @@ install: $(SERVICES)
 	install -d $(CONFIG_DIR)
 	install cocos-manager.env $(CONFIG_DIR)/cocos-manager.env
 
-install-all-services: $(CORE_SYSTEMD_SERVICES) $(NVIDIA_ATTESTATION_HELPER)
+install-all-services: $(CORE_SYSTEMD_SERVICES)
 	sudo install -d $(SERVICE_BIN_DIR)
+	sudo install -m 755 $(BUILD_DIR)/cocos-manager $(SERVICE_BIN_DIR)/cocos-manager
 	sudo install -m 755 $(BUILD_DIR)/cocos-attestation-service $(SERVICE_BIN_DIR)/attestation-service
 	sudo install -m 755 $(BUILD_DIR)/cocos-log-forwarder $(SERVICE_BIN_DIR)/log-forwarder
 	sudo install -m 755 $(BUILD_DIR)/cocos-computation-runner $(SERVICE_BIN_DIR)/computation-runner
 	sudo install -m 755 $(BUILD_DIR)/cocos-egress-proxy $(SERVICE_BIN_DIR)/egress-proxy
-	sudo install -d $(CONFIG_DIR) $(INIT_DIR) $(COCOS_WORK_DIR) $(COCOS_LOG_DIR) $(COCOS_RUNTIME_DIR) $(COCOS_LIBEXEC_DIR)
-	sudo install -m 755 $(NVIDIA_ATTESTATION_HELPER_BINARY) $(ATTESTATION_HELPER_INSTALL_PATH)
+	sudo install -d $(CONFIG_DIR) $(INIT_DIR) $(COCOS_WORK_DIR) $(COCOS_LOG_DIR) $(COCOS_RUNTIME_DIR)
+	sudo install -m 644 cocos-manager.env $(CONFIG_DIR)/cocos-manager.env
 	sudo touch $(COCOS_ENV_FILE)
 	sudo chmod 644 $(COCOS_ENV_FILE)
 	sudo chmod 755 $(COCOS_RUNTIME_DIR)
@@ -119,6 +118,7 @@ install-all-services: $(CORE_SYSTEMD_SERVICES) $(NVIDIA_ATTESTATION_HELPER)
 	sudo install -m 755 init/systemd/attestation_setup.sh $(INIT_DIR)/attestation_setup.sh
 	sudo install -m 755 init/systemd/agent_start_script.sh $(INIT_DIR)/agent_start_script.sh
 	sudo install -d $(SERVICE_DIR)
+	sudo install -m 644 init/systemd/cocos-manager.service $(SERVICE_DIR)/cocos-manager.service
 	sudo install -m 644 init/systemd/attestation-service.service $(SERVICE_DIR)/attestation-service.service
 	sudo install -m 644 init/systemd/log-forwarder.service $(SERVICE_DIR)/log-forwarder.service
 	sudo install -m 644 init/systemd/computation-runner.service $(SERVICE_DIR)/computation-runner.service
