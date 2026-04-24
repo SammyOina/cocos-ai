@@ -1,5 +1,4 @@
 BUILD_DIR = build
-BUILD_STAGE_DIR ?= /tmp/cocos-build-$(USER)
 SERVICES = manager agent cli attestation-service log-forwarder computation-runner egress-proxy ingress-proxy
 CORE_SYSTEMD_SERVICES = attestation-service log-forwarder computation-runner egress-proxy
 CORE_SYSTEMD_UNITS = attestation-service.service log-forwarder.service computation-runner.service egress-proxy.service
@@ -38,15 +37,13 @@ SERVICE_FILE = init/systemd/$(SERVICE_NAME).service
 IGVM_BUILD_SCRIPT := ./scripts/igvmmeasure/igvm.sh
 
 define compile_service
-	install -d $(BUILD_STAGE_DIR)
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) \
 	go build -ldflags "-s -w \
 	-X 'github.com/absmach/supermq.BuildTime=$(TIME)' \
 	-X 'github.com/absmach/supermq.Version=$(VERSION)' \
 	-X 'github.com/absmach/supermq.Commit=$(COMMIT)'" \
 	$(if $(filter 1,$(EMBED_ENABLED)),-tags "embed",) \
-	-o $(BUILD_STAGE_DIR)/cocos-$(1) ./cmd/$(1)
-	install -m 755 $(BUILD_STAGE_DIR)/cocos-$(1) ${BUILD_DIR}/cocos-$(1)
+	-o ${BUILD_DIR}/cocos-$(1) ./cmd/$(1)
 endef
 
 NVIDIA_ATTESTATION_HELPER_CARGO_ENV = $(if $(filter 1,$(NVAT_USE_SYSTEM_LIB)),NVAT_USE_SYSTEM_LIB=1,)
@@ -129,7 +126,7 @@ install-all-services: $(CORE_SYSTEMD_SERVICES) $(NVIDIA_ATTESTATION_HELPER)
 	sudo systemctl daemon-reload
 
 clean:
-	rm -rf $(BUILD_DIR) $(BUILD_STAGE_DIR)
+	rm -rf $(BUILD_DIR)
 
 run: install_service
 	sudo systemctl start $(SERVICE_NAME).service
