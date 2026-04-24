@@ -38,22 +38,16 @@ SERVICE_FILE = init/systemd/$(SERVICE_NAME).service
 IGVM_BUILD_SCRIPT := ./scripts/igvmmeasure/igvm.sh
 
 define compile_service
-	rm -rf $(BUILD_STAGE_DIR)/$(1)
-	install -d $(BUILD_STAGE_DIR)/$(1)
+	install -d $(BUILD_STAGE_DIR)
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) \
 	go build -ldflags "-s -w \
 	-X 'github.com/absmach/supermq.BuildTime=$(TIME)' \
 	-X 'github.com/absmach/supermq.Version=$(VERSION)' \
 	-X 'github.com/absmach/supermq.Commit=$(COMMIT)'" \
 	$(if $(filter 1,$(EMBED_ENABLED)),-tags "embed",) \
-	-o $(BUILD_STAGE_DIR)/$(1)/ ./cmd/$(1)
-	@service_binary=$$(find $(BUILD_STAGE_DIR)/$(1) -maxdepth 1 -type f | head -n 1); \
-	if [ -z "$$service_binary" ]; then \
-		echo "No staged binary found in $(BUILD_STAGE_DIR)/$(1) after building $(1)"; \
-		find $(BUILD_STAGE_DIR)/$(1) -maxdepth 1 -printf '%y %p\n' | sort; \
-		exit 1; \
-	fi; \
-	install -m 755 "$$service_binary" ${BUILD_DIR}/cocos-$(1)
+	-o $(BUILD_STAGE_DIR)/ ./cmd/$(1)
+	test -f $(BUILD_STAGE_DIR)/$(1)
+	install -m 755 $(BUILD_STAGE_DIR)/$(1) ${BUILD_DIR}/cocos-$(1)
 endef
 
 NVIDIA_ATTESTATION_HELPER_CARGO_ENV = $(if $(filter 1,$(NVAT_USE_SYSTEM_LIB)),NVAT_USE_SYSTEM_LIB=1,)
