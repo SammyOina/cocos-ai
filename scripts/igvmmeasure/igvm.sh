@@ -2,14 +2,13 @@
 
 REPO_URL="https://github.com/coconut-svsm/svsm.git"
 BUILD_DIR="$(cd "$(dirname "$0")/../.." && pwd)/build"
-SVSM_BUILD_DIR=""
+
 
 mkdir -p "$BUILD_DIR"
 
 # Define the target directory for cloning inside the build directory
 TARGET_DIR="$BUILD_DIR/svsm"
 SUBDIR="tools/igvmmeasure"
-SVSM_BUILD_DIR="$TARGET_DIR/build"
 
 # Clone the repository if it doesn't exist
 if [ -d "$TARGET_DIR" ]; then
@@ -34,8 +33,8 @@ fi
 
 echo "Building the Rust crate..."
 
-RELEASE=1 make bin/igvmmeasure BUILDDIR="$SVSM_BUILD_DIR"
+RELEASE=1 make bin/igvmmeasure BUILDDIR="$BUILD_DIR"
 
-install -m 755 bin/igvmmeasure "$BUILD_DIR/igvmmeasure"
+mv bin/igvmmeasure "$BUILD_DIR/"
 
 echo "Binary stored in: $BUILD_DIR/igvmmeasure"
