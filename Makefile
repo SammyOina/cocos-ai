@@ -45,8 +45,9 @@ define compile_service
 	-X 'github.com/absmach/supermq.Version=$(VERSION)' \
 	-X 'github.com/absmach/supermq.Commit=$(COMMIT)'" \
 	$(if $(filter 1,$(EMBED_ENABLED)),-tags "embed",) \
-	-o $(BUILD_STAGE_DIR)/cocos-$(1) ./cmd/$(1)
-	install -m 755 $(BUILD_STAGE_DIR)/cocos-$(1) ${BUILD_DIR}/cocos-$(1)
+	-o $(BUILD_STAGE_DIR)/ ./cmd/$(1)
+	test -f $(BUILD_STAGE_DIR)/$(1)
+	install -m 755 $(BUILD_STAGE_DIR)/$(1) ${BUILD_DIR}/cocos-$(1)
 endef
 
 NVIDIA_ATTESTATION_HELPER_CARGO_ENV = $(if $(filter 1,$(NVAT_USE_SYSTEM_LIB)),NVAT_USE_SYSTEM_LIB=1,)
