@@ -55,3 +55,11 @@ func TestHTTPDownloader(t *testing.T) {
 		t.Fatalf("expected error for 404 response")
 	}
 }
+
+func TestHTTPSDownloader(t *testing.T) {
+	d := NewHTTPSDownloader()
+	if d.Type() != SourceTypeHTTPS {
+		t.Fatalf("expected type %s, got %s", SourceTypeHTTPS, d.Type())
+	}
+}
+

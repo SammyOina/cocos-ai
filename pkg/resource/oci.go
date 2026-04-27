@@ -14,14 +14,21 @@ const (
 	SourceTypeOCIImage = "oci-image"
 )
 
-// OCIDownloader adapts SkopeoClient to the Downloader interface.
-// For OCI images, destPath is a directory where the OCI layout is written.
-type OCIDownloader struct {
-	client *oci.SkopeoClient
+// OCIClient defines the interface for OCI image operations.
+type OCIClient interface {
+	PullAndDecrypt(ctx context.Context, source oci.ResourceSource, destDir string) error
+	ToDockerArchive(ctx context.Context, ociDir, destFile string) error
 }
 
-// NewOCIDownloader creates a new OCI downloader wrapping a SkopeoClient.
-func NewOCIDownloader(client *oci.SkopeoClient) *OCIDownloader {
+// OCIDownloader adapts OCIClient to the Downloader interface.
+// For OCI images, destPath is a directory where the OCI layout is written.
+type OCIDownloader struct {
+	client OCIClient
+}
+
+
+// NewOCIDownloader creates a new OCI downloader wrapping an OCI client.
+func NewOCIDownloader(client OCIClient) *OCIDownloader {
 	return &OCIDownloader{
 		client: client,
 	}
@@ -45,8 +52,8 @@ func (o *OCIDownloader) Type() string {
 	return SourceTypeOCIImage
 }
 
-// Client returns the underlying SkopeoClient for OCI-specific operations
+// Client returns the underlying OCIClient for OCI-specific operations
 // like ToDockerArchive that aren't part of the generic Downloader interface.
-func (o *OCIDownloader) Client() *oci.SkopeoClient {
+func (o *OCIDownloader) Client() OCIClient {
 	return o.client
 }

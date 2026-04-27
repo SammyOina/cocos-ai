@@ -8,64 +8,73 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestDecryptData(t *testing.T) {
-	key := make([]byte, 32) // AES-256
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
+func TestDecryptFile(t *testing.T) {
+	key := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, key)
+	require.NoError(t, err)
 
-	plaintext := []byte("secret information")
+	plaintext := []byte("hello world")
 
-	// Encrypt to formulate test vector
+	// Encrypt data
 	block, err := aes.NewCipher(key)
-	if err != nil {
-		t.Fatalf("failed to create cipher: %v", err)
-	}
+	require.NoError(t, err)
 
 	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		t.Fatalf("failed to create gcm: %v", err)
-	}
+	require.NoError(t, err)
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		t.Fatalf("failed to generate nonce: %v", err)
-	}
+	_, err = io.ReadFull(rand.Reader, nonce)
+	require.NoError(t, err)
 
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
 
-	// In CoCo format, they want nonce prepended
-	encryptedData := append(nonce, ciphertext...)
+	tmpDir := t.TempDir()
+	encryptedPath := filepath.Join(tmpDir, "encrypted.bin")
+	err = os.WriteFile(encryptedPath, ciphertext, 0o644)
+	require.NoError(t, err)
 
-	// Test DecryptData successful
-	decrypted, err := DecryptData(encryptedData, key)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	t.Run("Successful decryption", func(t *testing.T) {
+		decrypted, err := DecryptFile(encryptedPath, key)
+		assert.NoError(t, err)
+		assert.Equal(t, plaintext, decrypted)
+	})
 
-	if string(decrypted) != string(plaintext) {
-		t.Fatalf("expected %q, got %q", string(plaintext), string(decrypted))
-	}
+	t.Run("Invalid key size", func(t *testing.T) {
+		_, err := DecryptFile(encryptedPath, key[:16])
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid key size")
+	})
 
-	// Test invalid key size
-	_, err = DecryptData(encryptedData, make([]byte, 16))
-	if err == nil {
-		t.Fatalf("expected error for invalid key size")
-	}
+	t.Run("File not found", func(t *testing.T) {
+		_, err := DecryptFile(filepath.Join(tmpDir, "nonexistent"), key)
+		assert.Error(t, err)
+	})
 
-	// Test too short data
-	_, err = DecryptData(make([]byte, 10), key)
-	if err == nil {
-		t.Fatalf("expected error for too short data")
-	}
+	t.Run("Ciphertext too short", func(t *testing.T) {
+		shortPath := filepath.Join(tmpDir, "short.bin")
+		err = os.WriteFile(shortPath, []byte("short"), 0o644)
+		require.NoError(t, err)
 
-	// Test corrupted data
-	encryptedData[15] ^= 1 // Flip a bit
-	_, err = DecryptData(encryptedData, key)
-	if err == nil {
-		t.Fatalf("expected error for corrupted ciphertext")
-	}
+		_, err = DecryptFile(shortPath, key)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ciphertext too short")
+	})
+
+	t.Run("Decryption failed (auth error)", func(t *testing.T) {
+		wrongKey := make([]byte, 32)
+		_, err := io.ReadFull(rand.Reader, wrongKey)
+		require.NoError(t, err)
+
+		_, err = DecryptFile(encryptedPath, wrongKey)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "decryption failed")
+	})
 }

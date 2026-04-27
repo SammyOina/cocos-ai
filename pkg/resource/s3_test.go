@@ -4,10 +4,13 @@
 package resource
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseS3URL(t *testing.T) {
@@ -80,41 +83,46 @@ func TestParseGCSURL(t *testing.T) {
 	}
 }
 
-// Full download test depends on actual GCP/AWS credentials unless mocked.
-// We implement a mock S3-compatible server here for basic testing.
-func TestS3DownloaderWithMockEndpoint(t *testing.T) {
-	testContent := "s3 test content"
+func TestS3DownloaderErrors(t *testing.T) {
+	ctx := context.Background()
+	d := NewS3Downloader("")
 
-	// A very basic mock server that handles Google Cloud Storage compatible GET requests
-	// The path will look like /bucket/key depending on how the client constructs it
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Log the requested path for debugging if needed
-		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "my-key") {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(testContent))
-			return
-		}
+	assert.Equal(t, SourceTypeS3, d.Type())
 
-		// Some GCS/S3 clients do probing or metadata requests
-		// For the purpose of this test, we might just need to return the content directly
-		// but since the storage.NewClient does some checking, we may fail.
-		// However, storage.NewClient without credentials in test environment
-		// usually fails initialization if not configured correctly.
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer ts.Close()
+	t.Run("Invalid URL", func(t *testing.T) {
+		err := d.Download(ctx, "invalid-url", "dest")
+		assert.Error(t, err)
+	})
 
-	// Skip the actual client call if we don't have a robust mock,
-	// because cloud.google.com/go/storage is hard to mock perfectly without a full emulator.
-	// For this test, we just verify the parsing and the Type() method.
+	t.Run("Failed to create directory", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "blocked")
+		require.NoError(t, err)
+		defer os.Remove(tmpFile.Name())
 
-	d := NewS3Downloader(ts.URL)
-	if d.Type() != SourceTypeS3 {
-		t.Fatalf("expected type %s, got %s", SourceTypeS3, d.Type())
-	}
+		err = d.Download(ctx, "s3://bucket/key", filepath.Join(tmpFile.Name(), "subdir", "file"))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create destination directory")
+	})
+}
 
-	d2 := NewGCSDownloader()
-	if d2.Type() != SourceTypeGCS {
-		t.Fatalf("expected type %s, got %s", SourceTypeGCS, d2.Type())
-	}
+func TestGCSDownloaderErrors(t *testing.T) {
+	ctx := context.Background()
+	d := NewGCSDownloader()
+
+	assert.Equal(t, SourceTypeGCS, d.Type())
+
+	t.Run("Invalid URL", func(t *testing.T) {
+		err := d.Download(ctx, "invalid-url", "dest")
+		assert.Error(t, err)
+	})
+
+	t.Run("Failed to create directory", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "blocked-gcs")
+		require.NoError(t, err)
+		defer os.Remove(tmpFile.Name())
+
+		err = d.Download(ctx, "gs://bucket/key", filepath.Join(tmpFile.Name(), "subdir", "file"))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create destination directory")
+	})
 }
