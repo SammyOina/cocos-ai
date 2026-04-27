@@ -589,6 +589,9 @@ func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *
 
 // inferSourceType infers the resource source type from the URL scheme.
 func inferSourceType(u string) string {
+	if u == "" {
+		return ""
+	}
 	parsedURL, err := url.Parse(u)
 	if err != nil {
 		return ""
@@ -607,8 +610,11 @@ func inferSourceType(u string) string {
 		return resource.SourceTypeHTTP
 	case "":
 		// No URL scheme (e.g., bare "docker.io/library/ubuntu:latest").
-		// Default to OCI Image.
-		return resource.SourceTypeOCIImage
+		// Default to OCI Image if it looks like one (contains a slash).
+		if strings.Contains(u, "/") {
+			return resource.SourceTypeOCIImage
+		}
+		return ""
 	default:
 		// A scheme was parsed. But if it's not a known standard scheme,
 		// it might be a bare OCI reference like "ubuntu:latest" where "ubuntu" is parsed as the scheme.

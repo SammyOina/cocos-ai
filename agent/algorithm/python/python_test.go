@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/ultravioletrs/cocos/agent/algorithm/logging"
 	"github.com/ultravioletrs/cocos/agent/events/mocks"
@@ -88,6 +89,7 @@ func TestRun(t *testing.T) {
 	}
 
 	eventsSvc := new(mocks.Service)
+	eventsSvc.EXPECT().SendEvent(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	var stdout, stderr bytes.Buffer
 
@@ -129,6 +131,7 @@ func TestRunWithRequirements(t *testing.T) {
 	}
 
 	eventsSvc := new(mocks.Service)
+	eventsSvc.EXPECT().SendEvent(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
 	var stdout, stderr bytes.Buffer
 
