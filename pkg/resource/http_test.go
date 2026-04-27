@@ -62,4 +62,3 @@ func TestHTTPSDownloader(t *testing.T) {
 		t.Fatalf("expected type %s, got %s", SourceTypeHTTPS, d.Type())
 	}
 }
-

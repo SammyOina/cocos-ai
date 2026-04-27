@@ -26,7 +26,6 @@ type OCIDownloader struct {
 	client OCIClient
 }
 
-
 // NewOCIDownloader creates a new OCI downloader wrapping an OCI client.
 func NewOCIDownloader(client OCIClient) *OCIDownloader {
 	return &OCIDownloader{
