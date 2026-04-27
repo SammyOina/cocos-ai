@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -587,19 +588,35 @@ func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *
 }
 
 // inferSourceType infers the resource source type from the URL scheme.
-func inferSourceType(url string) string {
-	switch {
-	case strings.HasPrefix(url, "docker://"), strings.HasPrefix(url, "oci:"):
+func inferSourceType(u string) string {
+	parsedURL, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+
+	switch parsedURL.Scheme {
+	case "docker", "oci":
 		return resource.SourceTypeOCIImage
-	case strings.HasPrefix(url, "s3://"):
+	case "s3":
 		return resource.SourceTypeS3
-	case strings.HasPrefix(url, "gs://"):
+	case "gs":
 		return resource.SourceTypeGCS
-	case strings.HasPrefix(url, "https://"):
+	case "https":
 		return resource.SourceTypeHTTPS
-	case strings.HasPrefix(url, "http://"):
+	case "http":
 		return resource.SourceTypeHTTP
+	case "":
+		// No URL scheme (e.g., bare "docker.io/library/ubuntu:latest").
+		// Default to OCI Image.
+		return resource.SourceTypeOCIImage
 	default:
+		// A scheme was parsed. But if it's not a known standard scheme,
+		// it might be a bare OCI reference like "ubuntu:latest" where "ubuntu" is parsed as the scheme.
+		// If there is no "://" and we have an opaque part (meaning there's a colon but no slashes),
+		// it's highly likely a bare image name.
+		if !strings.Contains(u, "://") && parsedURL.Opaque != "" {
+			return resource.SourceTypeOCIImage
+		}
 		return ""
 	}
 }
@@ -724,10 +741,16 @@ func (as *agentService) downloadAndDecryptOCIImage(ctx context.Context, source *
 		return nil, fmt.Errorf("OCI client not initialized")
 	}
 
+	uri := source.URL
+	// If the URI is just an image name without a transport scheme, default to docker://
+	if !strings.Contains(uri, "://") && !strings.HasPrefix(uri, "oci:") && !strings.HasPrefix(uri, "docker-archive:") && !strings.HasPrefix(uri, "dir:") {
+		uri = "docker://" + uri
+	}
+
 	// Create OCI resource source
 	ociSource := oci.ResourceSource{
 		Type:            oci.ResourceTypeOCIImage,
-		URI:             source.URL,
+		URI:             uri,
 		Encrypted:       source.Encrypted,
 		KBSResourcePath: source.KBSResourcePath,
 	}

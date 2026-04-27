@@ -91,7 +91,7 @@ func TestS3DownloaderWithMockEndpoint(t *testing.T) {
 		// Log the requested path for debugging if needed
 		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "my-key") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(testContent))
+			_, _ = w.Write([]byte(testContent))
 			return
 		}
 

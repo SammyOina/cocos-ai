@@ -34,6 +34,7 @@ import (
 	"github.com/ultravioletrs/cocos/pkg/attestation/vtpm"
 	runnermocks "github.com/ultravioletrs/cocos/pkg/clients/grpc/runner/mocks"
 	"github.com/ultravioletrs/cocos/pkg/oci"
+	"github.com/ultravioletrs/cocos/pkg/resource"
 	"golang.org/x/crypto/sha3"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -716,7 +717,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("unsupported URL format no type", func(t *testing.T) {
-		source := &ResourceSource{URL: "http://unsupported-format"}
+		source := &ResourceSource{URL: "abc://unsupported-format"}
 		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source URL format")
@@ -734,6 +735,21 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source type: s3-bucket")
+	})
+
+	t.Run("bare OCI image name inferred as oci-image", func(t *testing.T) {
+		source := &ResourceSource{URL: "ubuntu:latest"}
+		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		require.Error(t, err)
+		// Should route to OCI and fail at OCI client (which is nil or mock)
+		assert.NotContains(t, err.Error(), "unsupported source URL format")
+	})
+
+	t.Run("bare registry image name inferred as oci-image", func(t *testing.T) {
+		source := &ResourceSource{URL: "gcr.io/project/image:latest"}
+		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "unsupported source URL format")
 	})
 
 	t.Run("docker:// URL inferred as oci-image routes to skopeo", func(t *testing.T) {
@@ -1767,4 +1783,30 @@ func TestRunComputation_Success(t *testing.T) {
 	assert.Nil(t, svc.runError)
 	sm.AssertExpectations(t)
 	runnerCli.AssertExpectations(t)
+}
+
+func TestInferSourceType(t *testing.T) {
+	testCases := []struct {
+		url      string
+		expected string
+	}{
+		{"docker://test/repo", resource.SourceTypeOCIImage},
+		{"oci:test/repo", resource.SourceTypeOCIImage},
+		{"s3://bucket/key", resource.SourceTypeS3},
+		{"gs://bucket/key", resource.SourceTypeGCS},
+		{"https://example.com/file", resource.SourceTypeHTTPS},
+		{"http://example.com/file", resource.SourceTypeHTTP},
+		{"abc://example.com/file", ""},
+		{"ftp://example.com/file", ""},
+		{"unknown://example.com/file", ""},
+		{"malformed-url", ""},
+		{"", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.url, func(t *testing.T) {
+			result := inferSourceType(tc.url)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
 }
