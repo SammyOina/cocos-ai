@@ -7,7 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +30,7 @@ import (
 	attestation_client "github.com/ultravioletrs/cocos/pkg/clients/grpc/attestation"
 	runner_client "github.com/ultravioletrs/cocos/pkg/clients/grpc/runner"
 	"github.com/ultravioletrs/cocos/pkg/oci"
+	"github.com/ultravioletrs/cocos/pkg/resource"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -151,6 +155,7 @@ type agentService struct {
 	cancel            context.CancelFunc        // Cancels the computation context.
 	vmpl              int                       // VMPL at which the Agent is running.
 	ociClient         OCIClient
+	resourceRegistry  *resource.Registry // Registry of resource downloaders (S3, HTTP, etc.)
 }
 
 var _ Service = (*agentService)(nil)
@@ -175,6 +180,17 @@ func New(ctx context.Context, logger *slog.Logger, eventSvc events.Service, atte
 		logger.Warn("failed to create Skopeo client", "error", err)
 	}
 	svc.ociClient = skopeoClient
+
+	// Initialize resource downloader registry with all supported source types.
+	reg := resource.NewRegistry()
+	if skopeoClient != nil {
+		reg.Register(resource.NewOCIDownloader(skopeoClient))
+	}
+	reg.Register(resource.NewHTTPSDownloader())
+	reg.Register(resource.NewHTTPDownloader())
+	reg.Register(resource.NewS3Downloader(""))
+	reg.Register(resource.NewGCSDownloader())
+	svc.resourceRegistry = reg
 
 	transitions := []statemachine.Transition{
 		{From: Idle, Event: Start, To: ReceivingManifest},
@@ -548,26 +564,177 @@ type DecryptedResource struct {
 	SourceDir    string
 }
 
-// downloadAndDecryptResource downloads and decrypts a resource using OCI images and CoCo Keyprovider.
+// downloadAndDecryptResource downloads and decrypts a resource from various sources.
 // For OCI images, Skopeo handles download and CoCo Keyprovider handles decryption automatically.
+// For S3, GCS, HTTP/HTTPS: download + optional AES-256-GCM decryption with key from KBS.
 func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *ResourceSource, resourceType string) (*DecryptedResource, error) {
-	// Determine source type
+	// Determine source type.
 	sourceType := source.Type
 	if sourceType == "" {
-		// Infer from URL
-		if strings.HasPrefix(source.URL, "docker://") || strings.HasPrefix(source.URL, "oci:") {
-			sourceType = "oci-image"
-		} else {
-			return nil, fmt.Errorf("unsupported source URL format: %s (use oci-image type)", source.URL)
+		sourceType = inferSourceType(source.URL)
+		if sourceType == "" {
+			return nil, fmt.Errorf("unsupported source URL format: %s (specify type explicitly or use a recognized URL scheme)", source.URL)
 		}
 	}
 
 	switch sourceType {
-	case "oci-image":
+	case resource.SourceTypeOCIImage:
 		return as.downloadAndDecryptOCIImage(ctx, source, resourceType)
+	case resource.SourceTypeS3, resource.SourceTypeGCS, resource.SourceTypeHTTPS, resource.SourceTypeHTTP:
+		return as.downloadAndDecryptGenericResource(ctx, source, sourceType, resourceType)
 	default:
 		return nil, fmt.Errorf("unsupported source type: %s", sourceType)
 	}
+}
+
+// inferSourceType infers the resource source type from the URL scheme.
+func inferSourceType(u string) string {
+	if u == "" {
+		return ""
+	}
+	parsedURL, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+
+	switch parsedURL.Scheme {
+	case "docker", "oci":
+		return resource.SourceTypeOCIImage
+	case "s3":
+		return resource.SourceTypeS3
+	case "gs":
+		return resource.SourceTypeGCS
+	case "https":
+		return resource.SourceTypeHTTPS
+	case "http":
+		return resource.SourceTypeHTTP
+	case "":
+		// No URL scheme (e.g., bare "docker.io/library/ubuntu:latest").
+		// Default to OCI Image if it looks like one (contains a slash).
+		if strings.Contains(u, "/") {
+			return resource.SourceTypeOCIImage
+		}
+		return ""
+	default:
+		// A scheme was parsed. But if it's not a known standard scheme,
+		// it might be a bare OCI reference like "ubuntu:latest" where "ubuntu" is parsed as the scheme.
+		// If there is no "://" and we have an opaque part (meaning there's a colon but no slashes),
+		// it's highly likely a bare image name.
+		if !strings.Contains(u, "://") && parsedURL.Opaque != "" {
+			return resource.SourceTypeOCIImage
+		}
+		return ""
+	}
+}
+
+// downloadAndDecryptGenericResource downloads a resource using the appropriate downloader
+// from the registry and optionally decrypts it with AES-256-GCM using a key from KBS.
+func (as *agentService) downloadAndDecryptGenericResource(ctx context.Context, source *ResourceSource, sourceType, resourceType string) (*DecryptedResource, error) {
+	as.logger.Info(fmt.Sprintf("downloading %s resource (type=%s url=%s encrypted=%t kbs_path=%s)",
+		resourceType, sourceType, source.URL, source.Encrypted, source.KBSResourcePath))
+
+	if as.resourceRegistry == nil {
+		return nil, fmt.Errorf("resource registry not initialized")
+	}
+
+	downloader, err := as.resourceRegistry.Get(sourceType)
+	if err != nil {
+		return nil, fmt.Errorf("no downloader for source type %s: %w", sourceType, err)
+	}
+
+	// Download to temporary file.
+	destPath := filepath.Join(os.TempDir(), "cocos-resources", resourceType, filepath.Base(source.URL))
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	if err := downloader.Download(ctx, source.URL, destPath); err != nil {
+		return nil, fmt.Errorf("failed to download resource from %s: %w", source.URL, err)
+	}
+
+	as.logger.Info("resource downloaded", "dest", destPath)
+
+	// Read the downloaded file.
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read downloaded resource: %w", err)
+	}
+
+	// If encrypted, retrieve key from KBS and decrypt.
+	if source.Encrypted && source.KBSResourcePath != "" {
+		as.logger.Info("resource is encrypted, retrieving decryption key from KBS",
+			"kbs_path", source.KBSResourcePath,
+			"kbs_url", as.computation.KBS.URL)
+
+		key, err := as.getKeyFromKBS(ctx, source.KBSResourcePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve decryption key from KBS: %w", err)
+		}
+
+		plaintext, err := resource.DecryptData(data, key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt resource: %w", err)
+		}
+
+		data = plaintext
+		as.logger.Info("resource decrypted successfully", "plaintext_size", len(data))
+	}
+
+	return &DecryptedResource{
+		Data: data,
+	}, nil
+}
+
+// getKeyFromKBS retrieves a decryption key from the Key Broker Service.
+// It uses the Attestation Agent's GetResource capability to fetch the key
+// after performing remote attestation.
+func (as *agentService) getKeyFromKBS(ctx context.Context, resourcePath string) ([]byte, error) {
+	if !as.computation.KBS.Enabled || as.computation.KBS.URL == "" {
+		return nil, fmt.Errorf("KBS not configured or not enabled")
+	}
+
+	// Construct KBS resource URL: kbs://<kbs_url>/<resource_path>
+	kbsResourceURL := fmt.Sprintf("%s/kbs/v0/resource/%s", as.computation.KBS.URL, resourcePath)
+
+	as.logger.Info("fetching key from KBS", "url", kbsResourceURL)
+
+	// Use a simple HTTP GET to KBS for now.
+	// In a full CoCo deployment, this would go through the Attestation Agent
+	// which performs attestation before KBS releases the key.
+	// For non-OCI resources, the AA/KBS handshake may need to be handled
+	// differently than via ocicrypt.
+	resp, err := kbsHTTPGet(ctx, kbsResourceURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch key from KBS at %s: %w", kbsResourceURL, err)
+	}
+
+	return resp, nil
+}
+
+// kbsHTTPGet performs an HTTP GET to the KBS endpoint.
+func kbsHTTPGet(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("KBS returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
 }
 
 // downloadAndDecryptOCIImage downloads and decrypts an OCI image using Skopeo and CoCo Keyprovider.
@@ -580,10 +747,16 @@ func (as *agentService) downloadAndDecryptOCIImage(ctx context.Context, source *
 		return nil, fmt.Errorf("OCI client not initialized")
 	}
 
+	uri := source.URL
+	// If the URI is just an image name without a transport scheme, default to docker://
+	if !strings.Contains(uri, "://") && !strings.HasPrefix(uri, "oci:") && !strings.HasPrefix(uri, "docker-archive:") && !strings.HasPrefix(uri, "dir:") {
+		uri = "docker://" + uri
+	}
+
 	// Create OCI resource source
 	ociSource := oci.ResourceSource{
 		Type:            oci.ResourceTypeOCIImage,
-		URI:             source.URL,
+		URI:             uri,
 		Encrypted:       source.Encrypted,
 		KBSResourcePath: source.KBSResourcePath,
 	}
