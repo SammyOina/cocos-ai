@@ -739,7 +739,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("bare OCI image name inferred as oci-image", func(t *testing.T) {
 		source := &ResourceSource{URL: "ubuntu:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		// Should route to OCI and fail at OCI client (which is nil or mock)
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
@@ -747,7 +747,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("bare registry image name inferred as oci-image", func(t *testing.T) {
 		source := &ResourceSource{URL: "gcr.io/project/image:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
 	})
@@ -785,7 +785,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 	t.Run("https inferred routes to registry", func(t *testing.T) {
 		// Mock registry to fail predictably
 		source := &ResourceSource{URL: "https://example.com/file.bin"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		// It should complain about registry missing, because the test service does not initialize the registry
 		assert.Contains(t, err.Error(), "resource registry not initialized")
@@ -793,7 +793,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("s3 inferred routes to registry", func(t *testing.T) {
 		source := &ResourceSource{URL: "s3://bucket/key"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "resource registry not initialized")
 	})

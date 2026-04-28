@@ -622,7 +622,7 @@ func (as *agentService) downloadAndDecryptResource(ctx context.Context, source *
 	case resource.SourceTypeOCIImage:
 		return as.downloadAndDecryptOCIImage(ctx, source, kbsURL, resourceType)
 	case resource.SourceTypeS3, resource.SourceTypeGCS, resource.SourceTypeHTTPS, resource.SourceTypeHTTP:
-		return as.downloadAndDecryptGenericResource(ctx, source, sourceType, resourceType)
+		return as.downloadAndDecryptGenericResource(ctx, source, sourceType, kbsURL, resourceType)
 	default:
 		return nil, fmt.Errorf("unsupported source type: %s", sourceType)
 	}
@@ -670,7 +670,7 @@ func inferSourceType(u string) string {
 
 // downloadAndDecryptGenericResource downloads a resource using the appropriate downloader
 // from the registry and optionally decrypts it with AES-256-GCM using a key from KBS.
-func (as *agentService) downloadAndDecryptGenericResource(ctx context.Context, source *ResourceSource, sourceType, resourceType string) (*DecryptedResource, error) {
+func (as *agentService) downloadAndDecryptGenericResource(ctx context.Context, source *ResourceSource, sourceType, kbsURL, resourceType string) (*DecryptedResource, error) {
 	as.logger.Info(fmt.Sprintf("downloading %s resource (type=%s url=%s encrypted=%t kbs_path=%s)",
 		resourceType, sourceType, source.URL, source.Encrypted, source.KBSResourcePath))
 
@@ -705,9 +705,9 @@ func (as *agentService) downloadAndDecryptGenericResource(ctx context.Context, s
 	if source.Encrypted && source.KBSResourcePath != "" {
 		as.logger.Info("resource is encrypted, retrieving decryption key from KBS",
 			"kbs_path", source.KBSResourcePath,
-			"kbs_url", as.computation.KBS.URL)
+			"kbs_url", kbsURL)
 
-		key, err := as.getKeyFromKBS(ctx, source.KBSResourcePath)
+		key, err := as.getKeyFromKBS(ctx, kbsURL, source.KBSResourcePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to retrieve decryption key from KBS: %w", err)
 		}
@@ -729,13 +729,13 @@ func (as *agentService) downloadAndDecryptGenericResource(ctx context.Context, s
 // getKeyFromKBS retrieves a decryption key from the Key Broker Service.
 // It uses the Attestation Agent's GetResource capability to fetch the key
 // after performing remote attestation.
-func (as *agentService) getKeyFromKBS(ctx context.Context, resourcePath string) ([]byte, error) {
-	if !as.computation.KBS.Enabled || as.computation.KBS.URL == "" {
+func (as *agentService) getKeyFromKBS(ctx context.Context, kbsURL, resourcePath string) ([]byte, error) {
+	if kbsURL == "" {
 		return nil, fmt.Errorf("KBS not configured or not enabled")
 	}
 
 	// Construct KBS resource URL: kbs://<kbs_url>/<resource_path>
-	kbsResourceURL := fmt.Sprintf("%s/kbs/v0/resource/%s", as.computation.KBS.URL, resourcePath)
+	kbsResourceURL := fmt.Sprintf("%s/kbs/v0/resource/%s", kbsURL, resourcePath)
 
 	as.logger.Info("fetching key from KBS", "url", kbsResourceURL)
 
