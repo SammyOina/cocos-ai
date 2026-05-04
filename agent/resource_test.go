@@ -55,9 +55,11 @@ func TestDownloadAndDecryptGenericResource(t *testing.T) {
 		logger:           slog.Default(),
 		resourceRegistry: registry,
 		computation: Computation{
-			KBS: KBSConfig{
-				Enabled: true,
-				URL:     "http://mock-kbs",
+			Algorithm: &Algorithm{
+				KBS: &KBSConfig{
+					Enabled: true,
+					URL:     "http://mock-kbs",
+				},
 			},
 		},
 	}
@@ -71,7 +73,7 @@ func TestDownloadAndDecryptGenericResource(t *testing.T) {
 		destPath := filepath.Join(os.TempDir(), "cocos-resources", "algo", "resource")
 		mockDownloader.On("Download", ctx, source.URL, destPath).Return(nil, "some data").Once()
 
-		res, err := svc.downloadAndDecryptGenericResource(ctx, source, resource.SourceTypeHTTP, "algo")
+		res, err := svc.downloadAndDecryptGenericResource(ctx, source, resource.SourceTypeHTTP, "", "algo")
 		assert.NoError(t, err)
 		assert.Equal(t, []byte("some data"), res.Data)
 		mockDownloader.AssertExpectations(t)
@@ -95,7 +97,7 @@ func TestDownloadAndDecryptGenericResource(t *testing.T) {
 		}))
 		defer ts.Close()
 
-		svc.computation.KBS.URL = ts.URL
+		svc.computation.Algorithm.KBS.URL = ts.URL
 
 		source := &ResourceSource{
 			URL:             "http://example.com/encrypted",
@@ -105,7 +107,7 @@ func TestDownloadAndDecryptGenericResource(t *testing.T) {
 		destPath := filepath.Join(os.TempDir(), "cocos-resources", "data", "encrypted")
 		mockDownloader.On("Download", ctx, source.URL, destPath).Return(nil, string(ciphertext)).Once()
 
-		res, err := svc.downloadAndDecryptGenericResource(ctx, source, resource.SourceTypeHTTP, "data")
+		res, err := svc.downloadAndDecryptGenericResource(ctx, source, resource.SourceTypeHTTP, svc.computation.Algorithm.KBS.URL, "data")
 		assert.NoError(t, err)
 		assert.Equal(t, plaintext, res.Data)
 		mockDownloader.AssertExpectations(t)
@@ -113,7 +115,7 @@ func TestDownloadAndDecryptGenericResource(t *testing.T) {
 
 	t.Run("Registry not initialized", func(t *testing.T) {
 		badSvc := &agentService{logger: slog.Default()}
-		_, err := badSvc.downloadAndDecryptGenericResource(ctx, &ResourceSource{}, "http", "algo")
+		_, err := badSvc.downloadAndDecryptGenericResource(ctx, &ResourceSource{}, "http", "", "algo")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "resource registry not initialized")
 	})
@@ -123,21 +125,23 @@ func TestGetKeyFromKBS(t *testing.T) {
 	svc := &agentService{
 		logger: slog.Default(),
 		computation: Computation{
-			KBS: KBSConfig{
-				Enabled: true,
+			Algorithm: &Algorithm{
+				KBS: &KBSConfig{
+					Enabled: true,
+				},
 			},
 		},
 	}
 	ctx := context.Background()
 
 	t.Run("KBS disabled", func(t *testing.T) {
-		svc.computation.KBS.Enabled = false
-		_, err := svc.getKeyFromKBS(ctx, "path")
+		svc.computation.Algorithm.KBS.Enabled = false
+		_, err := svc.getKeyFromKBS(ctx, "", "path")
 		assert.Error(t, err)
 	})
 
 	t.Run("Successful fetch", func(t *testing.T) {
-		svc.computation.KBS.Enabled = true
+		svc.computation.Algorithm.KBS.Enabled = true
 		key := []byte("this is a 32-byte key!!!!!!!!!!!")
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Contains(t, r.URL.Path, "resource/path")
@@ -145,9 +149,9 @@ func TestGetKeyFromKBS(t *testing.T) {
 			_, _ = w.Write(key)
 		}))
 		defer ts.Close()
-		svc.computation.KBS.URL = ts.URL
+		svc.computation.Algorithm.KBS.URL = ts.URL
 
-		fetched, err := svc.getKeyFromKBS(ctx, "path")
+		fetched, err := svc.getKeyFromKBS(ctx, svc.computation.Algorithm.KBS.URL, "path")
 		assert.NoError(t, err)
 		assert.Equal(t, key, fetched)
 	})
@@ -157,9 +161,9 @@ func TestGetKeyFromKBS(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer ts.Close()
-		svc.computation.KBS.URL = ts.URL
+		svc.computation.Algorithm.KBS.URL = ts.URL
 
-		_, err := svc.getKeyFromKBS(ctx, "path")
+		_, err := svc.getKeyFromKBS(ctx, svc.computation.Algorithm.KBS.URL, "path")
 		assert.Error(t, err)
 	})
 }
