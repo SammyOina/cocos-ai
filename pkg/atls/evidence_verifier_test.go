@@ -5,7 +5,9 @@ package atls
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -57,6 +59,9 @@ func TestPolicyEvidenceVerifierVerifyEvidence_RootAndGPU(t *testing.T) {
 	root := &stubVerifier{}
 	gpu := &stubVerifier{}
 	sessionNonce := []byte("session-nonce")
+	gpuNonce := deriveExpectedGPUNonce(sessionNonce)
+	gpuNonceHex := hex.EncodeToString(gpuNonce)
+	evidenceJSON := fmt.Appendf(nil, `[{"nonce":"%s","evidence":"abc","certificate":"def"}]`, gpuNonceHex)
 
 	v := &policyEvidenceVerifier{
 		policyPath: "/tmp/policy",
@@ -76,13 +81,13 @@ func TestPolicyEvidenceVerifierVerifyEvidence_RootAndGPU(t *testing.T) {
 		RawReport:    []byte("root-report"),
 		Nonce:        sessionNonce,
 		GPUExtensions: &eat.GPUExtensions{
-			Nonce:        deriveExpectedGPUNonce(sessionNonce),
-			EvidenceJSON: []byte(`[{"nonce":"aabbcc","evidence":"abc","certificate":"def"}]`),
+			Nonce:        gpuNonce,
+			EvidenceJSON: evidenceJSON,
 		},
 	}))
 	require.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("root-report")}, root.reports)
-	assert.Equal(t, [][]byte{[]byte(`[{"nonce":"aabbcc","evidence":"abc","certificate":"def"}]`)}, gpu.reports)
+	assert.Equal(t, [][]byte{evidenceJSON}, gpu.reports)
 }
 
 func TestPolicyEvidenceVerifierVerifyEvidence_GPUNonceMismatch(t *testing.T) {
@@ -117,6 +122,8 @@ func TestPolicyEvidenceVerifierVerifyEvidence_GPUVerifierError(t *testing.T) {
 	root := &stubVerifier{}
 	gpu := &stubVerifier{err: expectedErr}
 	sessionNonce := []byte("session-nonce")
+	derivedNonce := deriveExpectedGPUNonce(sessionNonce)
+	gpuEvidenceJSON := fmt.Appendf(nil, `[{"nonce":"%s"}]`, hex.EncodeToString(derivedNonce))
 
 	v := &policyEvidenceVerifier{
 		policyPath: "/tmp/policy",
@@ -136,8 +143,8 @@ func TestPolicyEvidenceVerifierVerifyEvidence_GPUVerifierError(t *testing.T) {
 		RawReport:    []byte("root-report"),
 		Nonce:        sessionNonce,
 		GPUExtensions: &eat.GPUExtensions{
-			Nonce:        deriveExpectedGPUNonce(sessionNonce),
-			EvidenceJSON: []byte(`[{"nonce":"aabbcc"}]`),
+			Nonce:        derivedNonce,
+			EvidenceJSON: gpuEvidenceJSON,
 		},
 	}))
 	require.Error(t, err)
