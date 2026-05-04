@@ -41,7 +41,7 @@ NVIDIA_ATTESTATION_HELPER_RUSTFLAGS = $(strip $(RUSTFLAGS) $(if $(filter 1,$(NVA
 
 .PHONY: all $(SERVICES) $(NVIDIA_ATTESTATION_HELPER) nvidia-attestation-helper-prereqs install clean
 
-all: $(SERVICES) $(NVIDIA_ATTESTATION_HELPER)
+all: $(SERVICES)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

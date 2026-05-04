@@ -6,8 +6,11 @@ package atls
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	eaattestation "github.com/ultravioletrs/cocos/pkg/atls/eaattestation"
@@ -139,6 +142,21 @@ func (v *policyEvidenceVerifier) verifyGPUEvidence(claims *eat.EATClaims, manife
 	expectedNonce := sha256.Sum256(append(append([]byte(nil), claims.Nonce...), []byte(":gpu")...))
 	if !bytes.Equal(claims.GPUExtensions.Nonce, expectedNonce[:]) {
 		return fmt.Errorf("atls: gpu nonce binding mismatch")
+	}
+
+	// Guard against replay: a stale self-consistent EvidenceJSON blob can be
+	// paired with a rewritten outer Nonce unless the inner nonce is also checked.
+	var envelopes []struct {
+		Nonce string `json:"nonce"`
+	}
+	if err := json.Unmarshal(claims.GPUExtensions.EvidenceJSON, &envelopes); err != nil {
+		return fmt.Errorf("atls: failed to parse GPU evidence JSON: %w", err)
+	}
+	if len(envelopes) == 0 || strings.TrimSpace(envelopes[0].Nonce) == "" {
+		return fmt.Errorf("atls: GPU evidence JSON missing nonce")
+	}
+	if envelopes[0].Nonce != hex.EncodeToString(expectedNonce[:]) {
+		return fmt.Errorf("atls: gpu evidence nonce mismatch")
 	}
 
 	verifier, err := v.newGPUVerifier()

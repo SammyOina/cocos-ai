@@ -45,7 +45,7 @@ func (s *service) claimOptions(ctx context.Context, req *attestationpb.Attestati
 		opts = append(opts, eat.WithGPU(&eat.GPUExtensions{
 			Vendor:         evidence.Vendor,
 			EvidenceFormat: evidence.EvidenceFormat,
-			Nonce:          evidence.Nonce,
+			Nonce:          gpuNonce,
 			EvidenceJSON:   evidence.RawEvidence,
 		}))
 	}
