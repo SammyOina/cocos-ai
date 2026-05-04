@@ -161,6 +161,9 @@ func NewEATClaims(report []byte, nonce []byte, platformType attestation.Platform
 	}
 
 	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
 		if err := opt(claims); err != nil {
 			return nil, err
 		}

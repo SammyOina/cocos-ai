@@ -16,6 +16,29 @@ import (
 	"github.com/veraison/corim/corim"
 )
 
+// validClaimsJSON is a well-formed helper response matching the real SDK output
+// (hopperClaimsv3_decoded.json from the NVAT SDK test data).
+const validClaimsJSON = `{
+	"GPU-0": {
+		"hwmodel": "GH100 A01 GSP BROM",
+		"oemid": "5703",
+		"x-nvidia-gpu-driver-version": "550.90.07",
+		"x-nvidia-gpu-vbios-version": "96.00.9F.00.01",
+		"secboot": true,
+		"dbgstat": "disabled",
+		"measres": "success",
+		"x-nvidia-gpu-attestation-report-nonce-match": true,
+		"x-nvidia-gpu-attestation-report-signature-verified": true,
+		"x-nvidia-gpu-attestation-report-cert-chain-fwid-match": true,
+		"x-nvidia-gpu-arch-check": true,
+		"x-nvidia-gpu-driver-rim-signature-verified": true,
+		"x-nvidia-gpu-vbios-rim-signature-verified": true,
+		"x-nvidia-gpu-driver-rim-version-match": true,
+		"x-nvidia-gpu-vbios-rim-version-match": true,
+		"x-nvidia-attestation-warning": null
+	}
+}`
+
 func fakeVerifierExecCommandContext(_ context.Context, name string, arg ...string) *exec.Cmd {
 	args := append([]string{"-test.run=TestGPUVerifierHelperProcess", "--", name}, arg...)
 	cmd := exec.Command(os.Args[0], args...)
@@ -51,6 +74,9 @@ func TestGPUVerifierHelperProcess(t *testing.T) {
 	case "verifier-empty-claims":
 		fmt.Fprintln(os.Stdout, `{"detached_eat_json":{"overall_result":true}}`)
 		os.Exit(0)
+	case "verifier-invalid-claims-format":
+		fmt.Fprintln(os.Stdout, `{"claims_json":[1,2,3]}`)
+		os.Exit(0)
 	default:
 		var req helperRequest
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
@@ -75,7 +101,7 @@ func TestGPUVerifierHelperProcess(t *testing.T) {
 		}
 
 		resp := helperResponse{
-			ClaimsJSON:      json.RawMessage(`[{"x-nvidia-device-type":"gpu"}]`),
+			ClaimsJSON:      json.RawMessage(validClaimsJSON),
 			DetachedEATJSON: json.RawMessage(`{"overall_result":true}`),
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
@@ -119,6 +145,12 @@ func TestVerifierVerifyWithCoRIM(t *testing.T) {
 	cmdVerifier.SetExecCommandContext(fakeVerifierExecCommandContext)
 
 	report := []byte(`[{"nonce":"aabbcc","evidence":"abc","certificate":"def"}]`)
+
+	// nil manifest: CoRIM phase skipped, only mandatory flags checked.
+	err = v.VerifyWithCoRIM(report, nil)
+	assert.NoError(t, err)
+
+	// Empty manifest: no digest entries → matchesCoRIM returns true → pass.
 	err = v.VerifyWithCoRIM(report, &corim.UnsignedCorim{})
 	assert.NoError(t, err)
 }
@@ -158,6 +190,12 @@ func TestVerifierVerifyWithCoRIMErrors(t *testing.T) {
 			report:    []byte(`[{"nonce":"aabbcc"}]`),
 			wantError: "gpu verifier response did not contain claims_json",
 		},
+		{
+			name:      "invalid claims format",
+			binary:    "verifier-invalid-claims-format",
+			report:    []byte(`[{"nonce":"aabbcc"}]`),
+			wantError: "gpu: failed to parse claims JSON",
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,4 +219,132 @@ func TestVerifierVerifyWithCoRIMErrors(t *testing.T) {
 			assert.ErrorContains(t, err, tt.wantError)
 		})
 	}
+}
+
+func TestAppraiseGPUClaims(t *testing.T) {
+	warning := "some warning"
+	validDevice := gpuDeviceClaims{
+		HWModel:               "GH100 A01 GSP BROM",
+		OEMID:                 "5703",
+		DriverVersion:         "550.90.07",
+		VBIOSVersion:          "96.00.9F.00.01",
+		SecBoot:               true,
+		DebugStatus:           "disabled",
+		MeasurementResult:     "success",
+		NonceMatch:            true,
+		SigVerified:           true,
+		FWIDMatch:             true,
+		ArchCheck:             true,
+		DriverRIMSigVerified:  true,
+		VBIOSRIMSigVerified:   true,
+		DriverRIMVersionMatch: true,
+		VBIOSRIMVersionMatch:  true,
+		AttestationWarning:    nil,
+	}
+
+	tests := []struct {
+		name      string
+		modify    func(gpuDeviceClaims) gpuDeviceClaims
+		wantError string
+	}{
+		{
+			name:   "all valid",
+			modify: func(c gpuDeviceClaims) gpuDeviceClaims { return c },
+		},
+		{
+			name:      "secure boot disabled",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.SecBoot = false; return c },
+			wantError: "secure boot not enabled",
+		},
+		{
+			name:      "debug not disabled",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.DebugStatus = "enabled"; return c },
+			wantError: "debug not disabled",
+		},
+		{
+			name:      "measurement result failed",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.MeasurementResult = "failed"; return c },
+			wantError: "measurement result not success",
+		},
+		{
+			name:      "nonce mismatch",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.NonceMatch = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "signature not verified",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.SigVerified = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "fwid mismatch",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.FWIDMatch = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "arch check failed",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.ArchCheck = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "driver RIM sig not verified",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.DriverRIMSigVerified = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "vbios RIM sig not verified",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.VBIOSRIMSigVerified = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "driver RIM version mismatch",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.DriverRIMVersionMatch = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "vbios RIM version mismatch",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.VBIOSRIMVersionMatch = false; return c },
+			wantError: "one or more attestation verification flags are false",
+		},
+		{
+			name:      "attestation warning present",
+			modify:    func(c gpuDeviceClaims) gpuDeviceClaims { c.AttestationWarning = &warning; return c },
+			wantError: "attestation warning",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			devices := map[string]gpuDeviceClaims{
+				"GPU-0": tt.modify(validDevice),
+			}
+			err := appraiseGPUClaims(devices, nil)
+			if tt.wantError == "" {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorContains(t, err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestMatchesCoRIM(t *testing.T) {
+	digest := []byte("some-32-byte-digest-padding-here")
+
+	t.Run("nil tags returns true", func(t *testing.T) {
+		assert.True(t, matchesCoRIM(digest, &corim.UnsignedCorim{}))
+	})
+
+	t.Run("non-ComidTag prefix is skipped", func(t *testing.T) {
+		m := &corim.UnsignedCorim{
+			Tags: []corim.Tag{[]byte{0x01, 0x02, 0x03}},
+		}
+		assert.True(t, matchesCoRIM(digest, m))
+	})
+
+	t.Run("unparseable ComidTag payload is skipped", func(t *testing.T) {
+		bad := append(append([]byte{}, corim.ComidTag...), 0xFF, 0xFE)
+		m := &corim.UnsignedCorim{Tags: []corim.Tag{bad}}
+		assert.True(t, matchesCoRIM(digest, m))
+	})
 }
