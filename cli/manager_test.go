@@ -412,9 +412,9 @@ func TestLoadCerts(t *testing.T) {
 				return nil
 			},
 			setupCLI: func(tmpDir string, c *CLI) {
-				c.AgentCVMClientKey = filepath.Join(tmpDir, "client.key")
-				c.AgentCVMClientCrt = filepath.Join(tmpDir, "client.crt")
-				c.AgentCVMServerCA = filepath.Join(tmpDir, "server.ca")
+				c.AgentVM.CVMClientKey = filepath.Join(tmpDir, "client.key")
+				c.AgentVM.CVMClientCrt = filepath.Join(tmpDir, "client.crt")
+				c.AgentVM.CVMServerCA = filepath.Join(tmpDir, "server.ca")
 			},
 			expectError: false,
 			validate: func(t *testing.T, req *manager.CreateReq) {
@@ -429,9 +429,9 @@ func TestLoadCerts(t *testing.T) {
 				return nil
 			},
 			setupCLI: func(tmpDir string, c *CLI) {
-				c.AgentCVMClientKey = ""
-				c.AgentCVMClientCrt = ""
-				c.AgentCVMServerCA = ""
+				c.AgentVM.CVMClientKey = ""
+				c.AgentVM.CVMClientCrt = ""
+				c.AgentVM.CVMServerCA = ""
 			},
 			expectError: false,
 			validate: func(t *testing.T, req *manager.CreateReq) {
@@ -446,9 +446,9 @@ func TestLoadCerts(t *testing.T) {
 				return nil // Don't create client key file
 			},
 			setupCLI: func(tmpDir string, c *CLI) {
-				c.AgentCVMClientKey = filepath.Join(tmpDir, "nonexistent.key")
-				c.AgentCVMClientCrt = ""
-				c.AgentCVMServerCA = ""
+				c.AgentVM.CVMClientKey = filepath.Join(tmpDir, "nonexistent.key")
+				c.AgentVM.CVMClientCrt = ""
+				c.AgentVM.CVMServerCA = ""
 			},
 			expectError: true,
 		},
@@ -459,9 +459,9 @@ func TestLoadCerts(t *testing.T) {
 				return os.WriteFile(filepath.Join(tmpDir, "client.key"), []byte("key-content"), 0o644)
 			},
 			setupCLI: func(tmpDir string, c *CLI) {
-				c.AgentCVMClientKey = filepath.Join(tmpDir, "client.key")
-				c.AgentCVMClientCrt = filepath.Join(tmpDir, "nonexistent.crt")
-				c.AgentCVMServerCA = ""
+				c.AgentVM.CVMClientKey = filepath.Join(tmpDir, "client.key")
+				c.AgentVM.CVMClientCrt = filepath.Join(tmpDir, "nonexistent.crt")
+				c.AgentVM.CVMServerCA = ""
 			},
 			expectError: true,
 		},
@@ -480,9 +480,9 @@ func TestLoadCerts(t *testing.T) {
 				return nil
 			},
 			setupCLI: func(tmpDir string, c *CLI) {
-				c.AgentCVMClientKey = filepath.Join(tmpDir, "client.key")
-				c.AgentCVMClientCrt = filepath.Join(tmpDir, "client.crt")
-				c.AgentCVMServerCA = filepath.Join(tmpDir, "nonexistent.ca")
+				c.AgentVM.CVMClientKey = filepath.Join(tmpDir, "client.key")
+				c.AgentVM.CVMClientCrt = filepath.Join(tmpDir, "client.crt")
+				c.AgentVM.CVMServerCA = filepath.Join(tmpDir, "nonexistent.ca")
 			},
 			expectError: true,
 		},
@@ -580,7 +580,7 @@ func TestTTLHandling(t *testing.T) {
 					assert.Error(t, err)
 				} else {
 					assert.NoError(t, err)
-					assert.Equal(t, tt.expectedTTL, mockCLI.Ttl)
+					assert.Equal(t, tt.expectedTTL, mockCLI.AgentVM.Ttl)
 				}
 			}
 		})

@@ -56,13 +56,11 @@ func (s *SkopeoClient) PullAndDecrypt(ctx context.Context, source ResourceSource
 
 	args := []string{"copy"}
 
-	// Add decryption key if image is encrypted
+	// Add decryption key if image is encrypted.
+	// The KBS URL is configured at the CoCo Keyprovider service level
+	// (via kernel cmdline agent.aa_kbc_params), not via ocicrypt's --decryption-key flag.
 	if source.Encrypted {
-		decryptionKey := DecryptionKeyProvider
-		if source.KBSURL != "" {
-			decryptionKey = fmt.Sprintf("provider:attestation-agent:type=kbs,url=%s", source.KBSURL)
-		}
-		args = append(args, "--decryption-key", decryptionKey)
+		args = append(args, "--decryption-key", DecryptionKeyProvider)
 	}
 
 	// Add insecure policy for testing (TODO: use proper policy in production)

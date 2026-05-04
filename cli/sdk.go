@@ -16,30 +16,42 @@ import (
 	"github.com/ultravioletrs/cocos/pkg/sdk"
 )
 
+type AgentVMConfig struct {
+	CVMServerURL string
+	CVMServerCA  string
+	CVMClientKey string
+	CVMClientCrt string
+	CVMCaURL     string
+	LogLevel     string
+	Ttl          time.Duration
+}
+
+type AWSConfig struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	EndpointURL     string
+	Region          string
+}
+
+type AttestationConfig struct {
+	KbsParams string
+}
+
 type CLI struct {
-	agentSDK           sdk.SDK
-	agentConfig        clients.AttestedClientConfig
-	managerConfig      clients.StandardClientConfig
-	client             grpc.Client
-	managerClient      manager.ManagerServiceClient
-	connectErr         error
-	measurement        cmdconfig.MeasurementProvider
-	Verbose            bool
-	IsManifest         bool
-	ToBase64           bool
-	KeyType            string
-	AgentCVMServerUrl  string
-	AgentCVMServerCA   string
-	AgentCVMClientKey  string
-	AgentCVMClientCrt  string
-	AgentCVMCaUrl      string
-	AgentLogLevel      string
-	Ttl                time.Duration
-	AwsAccessKeyId     string
-	AwsSecretAccessKey string
-	AwsEndpointUrl     string
-	AwsRegion          string
-	AaKbsParams        string
+	agentSDK      sdk.SDK
+	agentConfig   clients.AttestedClientConfig
+	managerConfig clients.StandardClientConfig
+	client        grpc.Client
+	managerClient manager.ManagerServiceClient
+	connectErr    error
+	measurement   cmdconfig.MeasurementProvider
+	Verbose       bool
+	IsManifest    bool
+	ToBase64      bool
+	KeyType       string
+	AgentVM       AgentVMConfig
+	AWS           AWSConfig
+	Attestation   AttestationConfig
 }
 
 func New(agentConfig clients.AttestedClientConfig, managerConfig clients.StandardClientConfig, measurement cmdconfig.MeasurementProvider) *CLI {
