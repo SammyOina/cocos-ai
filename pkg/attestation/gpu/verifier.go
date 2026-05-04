@@ -6,6 +6,7 @@ package gpu
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ultravioletrs/cocos/pkg/attestation"
+	"github.com/veraison/corim/comid"
 	"github.com/veraison/corim/corim"
 )
 
@@ -31,6 +33,27 @@ type verifier struct {
 
 type evidenceEnvelope struct {
 	Nonce string `json:"nonce"`
+}
+
+// gpuDeviceClaims mirrors the per-device object produced by the NVIDIA
+// attestation helper's verify mode (e.g. "GPU-0": { ... }).
+type gpuDeviceClaims struct {
+	HWModel               string  `json:"hwmodel"`
+	OEMID                 string  `json:"oemid"`
+	DriverVersion         string  `json:"x-nvidia-gpu-driver-version"`
+	VBIOSVersion          string  `json:"x-nvidia-gpu-vbios-version"`
+	SecBoot               bool    `json:"secboot"`
+	DebugStatus           string  `json:"dbgstat"`
+	MeasurementResult     string  `json:"measres"`
+	NonceMatch            bool    `json:"x-nvidia-gpu-attestation-report-nonce-match"`
+	SigVerified           bool    `json:"x-nvidia-gpu-attestation-report-signature-verified"`
+	FWIDMatch             bool    `json:"x-nvidia-gpu-attestation-report-cert-chain-fwid-match"`
+	ArchCheck             bool    `json:"x-nvidia-gpu-arch-check"`
+	DriverRIMSigVerified  bool    `json:"x-nvidia-gpu-driver-rim-signature-verified"`
+	VBIOSRIMSigVerified   bool    `json:"x-nvidia-gpu-vbios-rim-signature-verified"`
+	DriverRIMVersionMatch bool    `json:"x-nvidia-gpu-driver-rim-version-match"`
+	VBIOSRIMVersionMatch  bool    `json:"x-nvidia-gpu-vbios-rim-version-match"`
+	AttestationWarning    *string `json:"x-nvidia-attestation-warning"`
 }
 
 func NewVerifier(binaryPath string, timeout time.Duration) (attestation.Verifier, error) {
@@ -98,12 +121,90 @@ func (v *verifier) VerifyWithCoRIM(report []byte, manifest *corim.UnsignedCorim)
 		return fmt.Errorf("gpu verifier response did not contain claims_json")
 	}
 
-	// NVIDIA attestation currently performs its own evidence-policy appraisal
-	// and returns claims/detached EAT. We keep the attestation.Verifier
-	// interface by treating manifest integration as a follow-up layer.
-	_ = manifest
+	var deviceClaims map[string]gpuDeviceClaims
+	if err := json.Unmarshal(resp.ClaimsJSON, &deviceClaims); err != nil {
+		return fmt.Errorf("gpu: failed to parse claims JSON: %w", err)
+	}
 
+	return appraiseGPUClaims(deviceClaims, manifest)
+}
+
+// appraiseGPUClaims checks mandatory security flags on every device, then
+// matches each device's identity against CoRIM reference values when a
+// manifest is provided.
+func appraiseGPUClaims(devices map[string]gpuDeviceClaims, manifest *corim.UnsignedCorim) error {
+	for id, c := range devices {
+		if !c.SecBoot {
+			return fmt.Errorf("gpu: %s: secure boot not enabled", id)
+		}
+		if c.DebugStatus != "disabled" {
+			return fmt.Errorf("gpu: %s: debug not disabled (got %q)", id, c.DebugStatus)
+		}
+		if c.MeasurementResult != "success" {
+			return fmt.Errorf("gpu: %s: measurement result not success (got %q)", id, c.MeasurementResult)
+		}
+		if !c.NonceMatch || !c.SigVerified || !c.FWIDMatch || !c.ArchCheck ||
+			!c.DriverRIMSigVerified || !c.VBIOSRIMSigVerified ||
+			!c.DriverRIMVersionMatch || !c.VBIOSRIMVersionMatch {
+			return fmt.Errorf("gpu: %s: one or more attestation verification flags are false", id)
+		}
+		if c.AttestationWarning != nil {
+			return fmt.Errorf("gpu: %s: attestation warning: %s", id, *c.AttestationWarning)
+		}
+	}
+
+	if manifest == nil {
+		return nil
+	}
+
+	// Match each device's identity (model|driver|vbios) against CoRIM digests.
+	// matchesCoRIM returns true when a digest matches OR when the manifest
+	// contains no digest entries at all (no GPU policy configured).
+	for id, c := range devices {
+		identity := c.HWModel + "|" + c.DriverVersion + "|" + c.VBIOSVersion
+		digest := sha256.Sum256([]byte(identity))
+		if !matchesCoRIM(digest[:], manifest) {
+			return fmt.Errorf("gpu: %s: no CoRIM reference value matched (model=%q driver=%q vbios=%q)",
+				id, c.HWModel, c.DriverVersion, c.VBIOSVersion)
+		}
+	}
 	return nil
+}
+
+// matchesCoRIM returns true when digest matches any reference value digest in
+// the manifest, or when the manifest contains no digest entries (treating an
+// empty manifest as "no GPU policy configured").
+func matchesCoRIM(digest []byte, manifest *corim.UnsignedCorim) bool {
+	hasAnyDigests := false
+	for _, tag := range manifest.Tags {
+		if !bytes.HasPrefix(tag, corim.ComidTag) {
+			continue
+		}
+		var c comid.Comid
+		if err := c.FromCBOR(tag[len(corim.ComidTag):]); err != nil {
+			continue
+		}
+		if c.Triples.ReferenceValues == nil {
+			continue
+		}
+		for _, rv := range *c.Triples.ReferenceValues {
+			if rv.Measurements.Valid() != nil {
+				continue
+			}
+			for _, m := range rv.Measurements {
+				if m.Val.Digests == nil {
+					continue
+				}
+				for _, d := range *m.Val.Digests {
+					hasAnyDigests = true
+					if bytes.Equal(d.HashValue, digest) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return !hasAnyDigests
 }
 
 func evidenceNonce(report []byte) (string, error) {
