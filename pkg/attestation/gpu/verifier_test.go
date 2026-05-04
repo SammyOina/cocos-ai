@@ -77,6 +77,9 @@ func TestGPUVerifierHelperProcess(t *testing.T) {
 	case "verifier-invalid-claims-format":
 		fmt.Fprintln(os.Stdout, `{"claims_json":[1,2,3]}`)
 		os.Exit(0)
+	case "verifier-empty-device-claims":
+		fmt.Fprintln(os.Stdout, `{"claims_json":{}}`)
+		os.Exit(0)
 	default:
 		var req helperRequest
 		if err := json.NewDecoder(os.Stdin).Decode(&req); err != nil {
@@ -195,6 +198,12 @@ func TestVerifierVerifyWithCoRIMErrors(t *testing.T) {
 			binary:    "verifier-invalid-claims-format",
 			report:    []byte(`[{"nonce":"aabbcc"}]`),
 			wantError: "gpu: failed to parse claims JSON",
+		},
+		{
+			name:      "empty device claims",
+			binary:    "verifier-empty-device-claims",
+			report:    []byte(`[{"nonce":"aabbcc"}]`),
+			wantError: "gpu: verifier response contained no device claims",
 		},
 	}
 
