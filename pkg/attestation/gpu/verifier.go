@@ -125,6 +125,9 @@ func (v *verifier) VerifyWithCoRIM(report []byte, manifest *corim.UnsignedCorim)
 	if err := json.Unmarshal(resp.ClaimsJSON, &deviceClaims); err != nil {
 		return fmt.Errorf("gpu: failed to parse claims JSON: %w", err)
 	}
+	if len(deviceClaims) == 0 {
+		return fmt.Errorf("gpu: verifier response contained no device claims")
+	}
 
 	return appraiseGPUClaims(deviceClaims, manifest)
 }
