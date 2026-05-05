@@ -37,18 +37,29 @@ const (
 )
 
 type config struct {
-	LogLevel              string        `env:"ATTESTATION_LOG_LEVEL"         envDefault:"debug"`
-	Vmpl                  int           `env:"ATTESTATION_VMPL"              envDefault:"2"`
-	AgentMaaURL           string        `env:"AGENT_MAA_URL"                 envDefault:"https://sharedeus2.eus2.attest.azure.net"`
-	AgentOSBuild          string        `env:"AGENT_OS_BUILD"                envDefault:"UVC"`
-	AgentOSDistro         string        `env:"AGENT_OS_DISTRO"               envDefault:"UVC"`
-	AgentOSType           string        `env:"AGENT_OS_TYPE"                 envDefault:"UVC"`
-	EATFormat             string        `env:"ATTESTATION_EAT_FORMAT"        envDefault:"CBOR"` // JWT or CBOR
-	EATIssuer             string        `env:"ATTESTATION_EAT_ISSUER"        envDefault:"cocos-attestation-service"`
-	UseCCAttestationAgent bool          `env:"USE_CC_ATTESTATION_AGENT"      envDefault:"false"`
-	CCAgentAddress        string        `env:"CC_AGENT_ADDRESS"              envDefault:"127.0.0.1:50002"`
-	GPUHelperPath         string        `env:"ATTESTATION_GPU_HELPER_PATH"   envDefault:""`
+	LogLevel              string        `env:"ATTESTATION_LOG_LEVEL"    envDefault:"debug"`
+	Vmpl                  int           `env:"ATTESTATION_VMPL"         envDefault:"2"`
+	AgentMaaURL           string        `env:"AGENT_MAA_URL"            envDefault:"https://sharedeus2.eus2.attest.azure.net"`
+	AgentOSBuild          string        `env:"AGENT_OS_BUILD"           envDefault:"UVC"`
+	AgentOSDistro         string        `env:"AGENT_OS_DISTRO"          envDefault:"UVC"`
+	AgentOSType           string        `env:"AGENT_OS_TYPE"            envDefault:"UVC"`
+	EATFormat             string        `env:"ATTESTATION_EAT_FORMAT"   envDefault:"CBOR"` // JWT or CBOR
+	EATIssuer             string        `env:"ATTESTATION_EAT_ISSUER"   envDefault:"cocos-attestation-service"`
+	UseCCAttestationAgent bool          `env:"USE_CC_ATTESTATION_AGENT" envDefault:"false"`
+	CCAgentAddress        string        `env:"CC_AGENT_ADDRESS"         envDefault:"127.0.0.1:50002"`
+	GPUHelperPath         string        `env:"ATTESTATION_GPU_HELPER_PATH" envDefault:""`
 	GPUHelperTimeout      time.Duration `env:"ATTESTATION_GPU_HELPER_TIMEOUT" envDefault:"30s"`
+
+	// Future KBS Integration Configuration
+	// When KBS support is added, these fields will enable:
+	// - Remote attestation verification via KBS
+	// - Encrypted algorithm/dataset retrieval
+	// - Per-computation secret provisioning
+	//
+	// Example future fields:
+	// KBSEndpoint   string `env:"KBS_ENDPOINT"            envDefault:""` // Optional KBS URL
+	// KBSEnabled    bool   `env:"KBS_ENABLED"             envDefault:"false"`
+	// KBSTimeout    int    `env:"KBS_TIMEOUT_SECONDS"     envDefault:"30"`
 }
 
 func main() {
