@@ -504,7 +504,7 @@ func testComputation(t *testing.T) Computation {
 		Name:            "sample computation",
 		Description:     "sample description",
 		Datasets:        []Dataset{{Hash: dataHash, UserKey: []byte("key"), Dataset: data, Filename: datasetFile}},
-		Algorithm:       Algorithm{Hash: algoHash, UserKey: []byte("key"), Algorithm: algo},
+		Algorithm:       &Algorithm{Hash: algoHash, UserKey: []byte("key"), Algorithm: algo},
 		ResultConsumers: []ResultConsumer{{UserKey: []byte("key")}},
 	}
 }
@@ -631,7 +631,7 @@ func TestStopComputationIntegration(t *testing.T) {
 	computation := Computation{
 		ID:   "integration-test",
 		Name: "Integration Test",
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			Hash:      algoHash,
 			Algorithm: algo,
 		},
@@ -718,28 +718,28 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("unsupported URL format no type", func(t *testing.T) {
 		source := &ResourceSource{URL: "abc://unsupported-format"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source URL format")
 	})
 
 	t.Run("ftp URL unsupported format", func(t *testing.T) {
 		source := &ResourceSource{URL: "ftp://some-server/file"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source URL format")
 	})
 
 	t.Run("unsupported explicit source type", func(t *testing.T) {
 		source := &ResourceSource{Type: "s3-bucket", URL: "s3://mybucket/algo"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported source type: s3-bucket")
 	})
 
 	t.Run("bare OCI image name inferred as oci-image", func(t *testing.T) {
 		source := &ResourceSource{URL: "ubuntu:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		// Should route to OCI and fail at OCI client (which is nil or mock)
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
@@ -747,7 +747,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("bare registry image name inferred as oci-image", func(t *testing.T) {
 		source := &ResourceSource{URL: "gcr.io/project/image:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
 	})
@@ -755,7 +755,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 	t.Run("docker:// URL inferred as oci-image routes to skopeo", func(t *testing.T) {
 		// This exercises the oci-image path; will fail at skopeo step
 		source := &ResourceSource{URL: "docker://invalid.example.com/algo:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		// Should be a skopeo or OCI error, not an "unsupported" error
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
@@ -763,21 +763,21 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("oci: URL inferred as oci-image routes to skopeo", func(t *testing.T) {
 		source := &ResourceSource{URL: "oci:some-local-dir"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "unsupported source URL format")
 	})
 
 	t.Run("explicit oci-image type routes to skopeo", func(t *testing.T) {
 		source := &ResourceSource{Type: "oci-image", URL: "docker://invalid.example.com/algo:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "unsupported source type")
 	})
 
 	t.Run("dataset resource type with oci-image routes to skopeo", func(t *testing.T) {
 		source := &ResourceSource{Type: "oci-image", URL: "docker://invalid.example.com/data:latest"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "dataset")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "dataset")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "unsupported source type")
 	})
@@ -785,7 +785,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 	t.Run("https inferred routes to registry", func(t *testing.T) {
 		// Mock registry to fail predictably
 		source := &ResourceSource{URL: "https://example.com/file.bin"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		// It should complain about registry missing, because the test service does not initialize the registry
 		assert.Contains(t, err.Error(), "resource registry not initialized")
@@ -793,7 +793,7 @@ func TestDownloadAndDecryptResource(t *testing.T) {
 
 	t.Run("s3 inferred routes to registry", func(t *testing.T) {
 		source := &ResourceSource{URL: "s3://bucket/key"}
-		_, err := svc.downloadAndDecryptResource(ctx, source, "algorithm")
+		_, err := svc.downloadAndDecryptResource(ctx, source, "", "algorithm")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "resource registry not initialized")
 	})
@@ -823,10 +823,10 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{URL: "docker://registry/algo:latest"},
+				KBS:    &KBSConfig{Enabled: false},
 			},
-			KBS: KBSConfig{Enabled: false},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -843,13 +843,13 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://invalid.example.com/algo:latest",
 				},
+				KBS: &KBSConfig{Enabled: true, URL: "https://kbs.example.com"},
 			},
-			KBS: KBSConfig{Enabled: true, URL: "https://kbs.example.com"},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -867,12 +867,12 @@ func TestDownloadAlgorithmIfRemote(t *testing.T) {
 
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Source: &ResourceSource{
 					URL: "http://unsupported-format/algo",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -895,7 +895,6 @@ func TestDownloadDatasetsIfRemote(t *testing.T) {
 			Datasets: []Dataset{
 				{Hash: dataHash, Filename: "data.csv"},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -912,7 +911,6 @@ func TestDownloadDatasetsIfRemote(t *testing.T) {
 		svc := newTestAgentService(sm, eventsSvc)
 		svc.computation = Computation{
 			Datasets: []Dataset{},
-			KBS:      KBSConfig{Enabled: true},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -931,9 +929,9 @@ func TestDownloadDatasetsIfRemote(t *testing.T) {
 				{
 					Filename: "data.csv",
 					Source:   &ResourceSource{URL: "docker://registry/data:latest"},
+					KBS:      &KBSConfig{Enabled: false},
 				},
 			},
-			KBS: KBSConfig{Enabled: false},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -956,9 +954,9 @@ func TestDownloadDatasetsIfRemote(t *testing.T) {
 						Type: "oci-image",
 						URL:  "docker://invalid.example.com/data:latest",
 					},
+					KBS: &KBSConfig{Enabled: true, URL: "https://kbs.example.com"},
 				},
 			},
-			KBS: KBSConfig{Enabled: true, URL: "https://kbs.example.com"},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -978,11 +976,11 @@ func TestDownloadDatasetsIfRemote(t *testing.T) {
 				{
 					Filename: "data.csv",
 					Source: &ResourceSource{
-						URL: "ftp://unsupported/data",
+						URL: "http://unsupported-format/data",
 					},
+					KBS: &KBSConfig{Enabled: true},
 				},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -1147,15 +1145,15 @@ func TestDownloadAlgorithmIfRemote_Success(t *testing.T) {
 	algoHash := sha3.Sum256(algoContent)
 
 	svc.computation = Computation{
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			Hash:     algoHash,
 			AlgoType: "python",
 			Source: &ResourceSource{
 				Type: "oci-image",
 				URL:  "docker://test/algo-success",
 			},
+			KBS: &KBSConfig{Enabled: true},
 		},
-		KBS: KBSConfig{Enabled: true},
 	}
 
 	// We need to bypass oci.ExtractAlgorithm by manually creating what it would create
@@ -1202,15 +1200,15 @@ func TestDownloadAlgorithmIfRemote_Docker_Success(t *testing.T) {
 	svc.ociClient = mockOCI
 
 	svc.computation = Computation{
-		Algorithm: Algorithm{
+		Algorithm: &Algorithm{
 			AlgoType: "docker",
 			Hash:     dummyHash,
 			Source: &ResourceSource{
 				Type: "oci-image",
 				URL:  "docker://test/algo-docker-success",
 			},
+			KBS: &KBSConfig{Enabled: true},
 		},
-		KBS: KBSConfig{Enabled: true},
 	}
 
 	svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -1310,9 +1308,9 @@ func TestDownloadDatasetsIfRemote_Success(t *testing.T) {
 					Type: "oci-image",
 					URL:  "docker://test/data-success",
 				},
+				KBS: &KBSConfig{Enabled: true, URL: "https://kbs.example.com"},
 			},
 		},
-		KBS: KBSConfig{Enabled: true},
 	}
 
 	err := os.MkdirAll(algorithm.DatasetsDir, 0o755)
@@ -1374,9 +1372,9 @@ func TestDownloadDatasetsIfRemote_Decompress(t *testing.T) {
 					Type: "oci-image",
 					URL:  "docker://test/data-decompress",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
 		},
-		KBS: KBSConfig{Enabled: true},
 	}
 
 	err = os.MkdirAll(algorithm.DatasetsDir, 0o755)
@@ -1418,15 +1416,15 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     sha3.Sum256([]byte("expected content")),
 				AlgoType: "python",
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://test/algo-hash-mismatch",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -1454,15 +1452,15 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     sha3.Sum256([]byte(algoContent)),
 				AlgoType: "python",
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://test/algo-create-fail",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -1487,14 +1485,14 @@ func TestDownloadAlgorithmIfRemote_ErrorPathsInternal(t *testing.T) {
 		svc.ociClient = mockOCI
 
 		svc.computation = Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				AlgoType: "python",
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://test/image",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadAlgorithmIfRemote(ReceivingAlgorithm)
@@ -1541,9 +1539,9 @@ func TestDownloadDatasetsIfRemote_ErrorPathsInternal(t *testing.T) {
 						Type: "oci-image",
 						URL:  "docker://test/data-create-fail",
 					},
+					KBS: &KBSConfig{Enabled: true},
 				},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		svc.downloadDatasetsIfRemote(ReceivingData)
@@ -1580,9 +1578,9 @@ func TestDownloadDatasetsIfRemote_ErrorPathsInternal(t *testing.T) {
 						Type: "oci-image",
 						URL:  "docker://test/data-mismatch",
 					},
+					KBS: &KBSConfig{Enabled: true},
 				},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		err := os.MkdirAll(algorithm.DatasetsDir, 0o755)
@@ -1628,9 +1626,9 @@ func TestDownloadDatasetsIfRemote_ErrorPathsInternal(t *testing.T) {
 						Type: "oci-image",
 						URL:  "docker://test/data-unzip-fail",
 					},
+					KBS: &KBSConfig{Enabled: true},
 				},
 			},
-			KBS: KBSConfig{Enabled: true},
 		}
 
 		err := os.MkdirAll(algorithm.DatasetsDir, 0o755)
@@ -1676,15 +1674,15 @@ func TestAlgo_RemoteSource(t *testing.T) {
 		sm:        sm,
 		ociClient: mockOCI,
 		computation: Computation{
-			Algorithm: Algorithm{
+			Algorithm: &Algorithm{
 				Hash:     algoHash,
 				AlgoType: "python",
 				Source: &ResourceSource{
 					Type: "oci-image",
 					URL:  "docker://test/algo-remote",
 				},
+				KBS: &KBSConfig{Enabled: true},
 			},
-			KBS: KBSConfig{Enabled: true},
 		},
 	}
 
@@ -1735,9 +1733,9 @@ func TestData_RemoteSource(t *testing.T) {
 						Type: "oci-image",
 						URL:  "docker://test/data-remote",
 					},
+					KBS: &KBSConfig{Enabled: true},
 				},
 			},
-			KBS: KBSConfig{Enabled: true},
 		},
 	}
 

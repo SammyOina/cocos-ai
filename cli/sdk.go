@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/ultravioletrs/cocos/manager"
@@ -15,7 +16,26 @@ import (
 	"github.com/ultravioletrs/cocos/pkg/sdk"
 )
 
-var Verbose bool
+type AgentVMConfig struct {
+	CVMServerURL string
+	CVMServerCA  string
+	CVMClientKey string
+	CVMClientCrt string
+	CVMCaURL     string
+	LogLevel     string
+	Ttl          time.Duration
+}
+
+type AWSConfig struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	EndpointURL     string
+	Region          string
+}
+
+type AttestationConfig struct {
+	KbsParams string
+}
 
 type CLI struct {
 	agentSDK      sdk.SDK
@@ -25,6 +45,13 @@ type CLI struct {
 	managerClient manager.ManagerServiceClient
 	connectErr    error
 	measurement   cmdconfig.MeasurementProvider
+	Verbose       bool
+	IsManifest    bool
+	ToBase64      bool
+	KeyType       string
+	AgentVM       AgentVMConfig
+	AWS           AWSConfig
+	Attestation   AttestationConfig
 }
 
 func New(agentConfig clients.AttestedClientConfig, managerConfig clients.StandardClientConfig, measurement cmdconfig.MeasurementProvider) *CLI {
