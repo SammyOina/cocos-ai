@@ -18,6 +18,31 @@ import (
 
 const testComputationID = "test-computation"
 
+func cleanupStrayQcow2(t *testing.T) {
+	t.Helper()
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(wd, "qcow2"))
+	})
+}
+
+func requireTempFile(t *testing.T, path string) {
+	t.Helper()
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("failed to create temp file %s: %v", path, err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close temp file %s: %v", path, err)
+	}
+}
+
 func TestNewVM(t *testing.T) {
 	config := VMInfo{Config: Config{}}
 
@@ -81,30 +106,33 @@ func TestStartSudo(t *testing.T) {
 }
 
 func TestStart_EnableDisk(t *testing.T) {
+	cleanupStrayQcow2(t)
+
 	toolsDir := t.TempDir()
-	logFile := filepath.Join(toolsDir, "qemu-img-create.log")
+	convertLogFile := filepath.Join(toolsDir, "qemu-img-convert.log")
+	resizeLogFile := filepath.Join(toolsDir, "qemu-img-resize.log")
+	srcDiskFile := filepath.Join(toolsDir, "enc_os.qcow2")
+	requireTempFile(t, srcDiskFile)
 
 	writeFakeExecutable(t, toolsDir, "qemu-img", fmt.Sprintf(`#!/bin/sh
 case "$1" in
 info)
   printf '%%s' '{"virtual-size":2147483648}'
   ;;
-create)
+convert)
   printf '%%s\n' "$@" > %q
-  dst=""
-  prev=""
-  for arg in "$@"; do
-    dst="$prev"
-    prev="$arg"
-  done
+  dst="$7"
   : > "$dst"
+  ;;
+resize)
+  printf '%%s\n' "$@" > %q
   ;;
 *)
   echo "unexpected subcommand: $1" >&2
   exit 2
   ;;
 esac
-`, logFile))
+`, convertLogFile, resizeLogFile))
 
 	writeFakeExecutable(t, toolsDir, "fake-qemu", `#!/bin/sh
 trap 'exit 0' TERM INT
@@ -119,7 +147,7 @@ done
 		EnableDisk:  true,
 		QemuBinPath: "fake-qemu",
 		DiskConfig: DiskConfig{
-			SrcFile: "img/enc_os.qcow2",
+			SrcFile: srcDiskFile,
 			ID:      "disk0",
 			Format:  "qcow2",
 			SCSIID:  "scsi0",
@@ -135,18 +163,22 @@ done
 	_, err = os.Stat(vm.vmi.Config.DstFile)
 	assert.NoError(t, err)
 
-	loggedArgs, err := os.ReadFile(logFile)
-	assert.NoError(t, err)
-	srcFileAbs, err := filepath.Abs("img/enc_os.qcow2")
+	loggedArgs, err := os.ReadFile(convertLogFile)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{
-		"create",
+		"convert",
 		"-f",
 		"qcow2",
-		"-F",
+		"-O",
 		"qcow2",
-		"-b",
-		srcFileAbs,
+		srcDiskFile,
+		vm.vmi.Config.DstFile,
+	}, strings.Fields(string(loggedArgs)))
+
+	loggedArgs, err = os.ReadFile(resizeLogFile)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{
+		"resize",
 		vm.vmi.Config.DstFile,
 		"3G",
 	}, strings.Fields(string(loggedArgs)))
@@ -159,16 +191,23 @@ done
 }
 
 func TestStart_EnableDiskCreateError(t *testing.T) {
+	cleanupStrayQcow2(t)
+
 	toolsDir := t.TempDir()
+	srcDiskFile := filepath.Join(toolsDir, "enc_os.qcow2")
+	requireTempFile(t, srcDiskFile)
 
 	writeFakeExecutable(t, toolsDir, "qemu-img", `#!/bin/sh
 case "$1" in
 info)
   printf '%s' '{"virtual-size":2147483648}'
   ;;
-create)
+convert)
   echo 'disk create failed' >&2
   exit 1
+  ;;
+resize)
+  exit 0
   ;;
 *)
   echo "unexpected subcommand: $1" >&2
@@ -183,7 +222,7 @@ esac
 		EnableDisk:  true,
 		QemuBinPath: "fake-qemu",
 		DiskConfig: DiskConfig{
-			SrcFile: "img/enc_os.qcow2",
+			SrcFile: srcDiskFile,
 		},
 	}}
 
@@ -191,7 +230,7 @@ esac
 
 	err := vm.Start()
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "qemu-img create failed")
+	assert.ErrorContains(t, err, "qemu-img convert failed")
 	assert.ErrorContains(t, err, "disk create failed")
 	assert.Nil(t, vm.cmd)
 }

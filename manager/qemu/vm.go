@@ -100,15 +100,24 @@ func (v *qemuVM) Start() (err error) {
 
 		cmd := exec.Command(
 			"qemu-img",
-			"create",
-			"-f", v.vmi.Config.DiskConfig.Format,
-			"-F", sourceDiskFormat,
-			"-b", srcDiskFile,
+			"convert",
+			"-f", sourceDiskFormat,
+			"-O", v.vmi.Config.DiskConfig.Format,
+			srcDiskFile,
+			dstDiskFile,
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("qemu-img convert failed: %w: %s", err, string(out))
+		}
+
+		cmd = exec.Command(
+			"qemu-img",
+			"resize",
 			dstDiskFile,
 			sizeArg,
 		)
 		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("qemu-img create failed: %w: %s", err, string(out))
+			return fmt.Errorf("qemu-img resize failed: %w: %s", err, string(out))
 		}
 		v.vmi.Config.DstFile = dstDiskFile
 	}
